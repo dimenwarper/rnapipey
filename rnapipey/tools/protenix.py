@@ -7,11 +7,11 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from rnapipe.config import ProtenixConfig
-from rnapipe.tools.base import BaseTool, ToolResult
-from rnapipe.utils import read_fasta, which
+from rnapipey.config import ProtenixConfig
+from rnapipey.tools.base import BaseTool, ToolResult
+from rnapipey.utils import read_fasta, which
 
-logger = logging.getLogger("rnapipe")
+logger = logging.getLogger("rnapipey")
 
 
 class ProtenixTool(BaseTool):
@@ -80,7 +80,7 @@ class ProtenixTool(BaseTool):
     def _build_input_json(self, sequence: str, name: str) -> dict:
         """Build Protenix inference input JSON for a single RNA chain."""
         return {
-            "name": f"rnapipe_{name}",
+            "name": f"rnapipey_{name}",
             "modelSeeds": [42],
             "sequences": [
                 {

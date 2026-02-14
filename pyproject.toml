@@ -1,5 +1,5 @@
 [project]
-name = "rnapipe"
+name = "rnapipey"
 version = "0.1.0"
 description = "RNA 3D structure prediction pipeline"
 requires-python = ">=3.10"
@@ -17,7 +17,7 @@ dev = [
 ]
 
 [project.scripts]
-rnapipe = "rnapipe.cli:app"
+rnapipey = "rnapipey.cli:app"
 
 [build-system]
 requires = ["hatchling"]

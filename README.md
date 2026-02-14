@@ -1,4 +1,4 @@
-# rnapipe
+# rnapipey
 
 RNA 3D structure prediction pipeline. Wraps multiple prediction methods behind a unified CLI, runs them on the same input, scores the results, and picks the best model.
 
@@ -19,23 +19,42 @@ Sequence (FASTA) → Rfam/Infernal (MSA) → RNAfold (2D) → 3D Predictors → 
 uv sync
 ```
 
+### External tools (automated)
+
+Use the included installer to set up all external dependencies into a `rnapipey` conda environment:
+
+```bash
+# Install everything
+./install_tools.sh --all
+
+# Or pick specific tools
+./install_tools.sh --infernal --viennarna --rfam
+
+# Regenerate configs/local.yaml from already-installed tools
+./install_tools.sh --config-only
+```
+
+This creates a conda env `rnapipey`, downloads databases to `~/.rnapipey/data/`, clones git-based tools to `~/.rnapipey/tools/`, and generates `configs/local.yaml` with all paths filled in. Run `./install_tools.sh --help` for the full option list.
+
+**Note:** SimRNA requires a manual download (academic license from [genesilico.pl](https://genesilico.pl/SimRNAweb/)), and SPOT-RNA needs a separate Python 3.6 environment — the script will clone it and print setup instructions.
+
 ## Usage
 
 ```bash
 # Check which external tools are available
-rnapipe check
+rnapipey check
 
 # Run with specific predictors
-rnapipe run input.fasta -o results/ --rhofold --simrna
+rnapipey run input.fasta -o results/ --rhofold --simrna
 
 # Run all predictors
-rnapipe run input.fasta -o results/ --all
+rnapipey run input.fasta -o results/ --all
 
 # With options
-rnapipe run input.fasta -o results/ --all --skip-infernal --spotrna -v
+rnapipey run input.fasta -o results/ --all --skip-infernal --spotrna -v
 
 # Regenerate report from existing results
-rnapipe report results/
+rnapipey report results/
 ```
 
 ## Configuration
@@ -43,14 +62,14 @@ rnapipe report results/
 Copy and edit `configs/default.yaml` to point to your tool installations:
 
 ```bash
-rnapipe run input.fasta -c my_config.yaml --all
+rnapipey run input.fasta -c my_config.yaml --all
 ```
 
 Key config fields are paths to external tool binaries/scripts (RhoFold+ inference script, SimRNA binary, Rfam database, etc).
 
 ## External tools
 
-These must be installed separately — rnapipe wraps them via subprocess:
+These must be installed separately — rnapipey wraps them via subprocess:
 
 | Tool | Purpose | Install |
 |------|---------|---------|

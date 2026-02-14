@@ -7,11 +7,11 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from rnapipe.config import RNAdvisorConfig
-from rnapipe.tools.base import BaseTool, ToolResult
-from rnapipe.utils import which
+from rnapipey.config import RNAdvisorConfig
+from rnapipey.tools.base import BaseTool, ToolResult
+from rnapipey.utils import which
 
-logger = logging.getLogger("rnapipe")
+logger = logging.getLogger("rnapipey")
 
 
 class RNAdvisorTool(BaseTool):

@@ -6,11 +6,11 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from rnapipe.config import SimRNAConfig
-from rnapipe.tools.base import BaseTool, ToolResult
-from rnapipe.utils import read_fasta, which
+from rnapipey.config import SimRNAConfig
+from rnapipey.tools.base import BaseTool, ToolResult
+from rnapipey.utils import read_fasta, which
 
-logger = logging.getLogger("rnapipe")
+logger = logging.getLogger("rnapipey")
 
 
 class SimRNATool(BaseTool):

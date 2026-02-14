@@ -9,7 +9,7 @@ from typing import Any
 
 import yaml
 
-logger = logging.getLogger("rnapipe")
+logger = logging.getLogger("rnapipey")
 
 DEFAULT_CONFIG = Path(__file__).parent.parent / "configs" / "default.yaml"
 

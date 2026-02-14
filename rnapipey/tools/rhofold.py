@@ -6,10 +6,10 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from rnapipe.config import RhoFoldConfig
-from rnapipe.tools.base import BaseTool, ToolResult
+from rnapipey.config import RhoFoldConfig
+from rnapipey.tools.base import BaseTool, ToolResult
 
-logger = logging.getLogger("rnapipe")
+logger = logging.getLogger("rnapipey")
 
 
 class RhoFoldTool(BaseTool):

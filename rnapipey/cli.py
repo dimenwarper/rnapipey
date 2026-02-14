@@ -1,4 +1,4 @@
-"""CLI entry point for rnapipe."""
+"""CLI entry point for rnapipey."""
 
 from __future__ import annotations
 
@@ -9,13 +9,13 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from rnapipe import __version__
-from rnapipe.config import load_config
-from rnapipe.pipeline import Pipeline
-from rnapipe.utils import setup_logging
+from rnapipey import __version__
+from rnapipey.config import load_config
+from rnapipey.pipeline import Pipeline
+from rnapipey.utils import setup_logging
 
 app = typer.Typer(
-    name="rnapipe",
+    name="rnapipey",
     help="RNA 3D structure prediction pipeline",
     add_completion=False,
 )
@@ -24,7 +24,7 @@ console = Console()
 
 def version_callback(value: bool) -> None:
     if value:
-        console.print(f"rnapipe {__version__}")
+        console.print(f"rnapipey {__version__}")
         raise typer.Exit()
 
 
@@ -44,7 +44,7 @@ def run(
         ..., exists=True, readable=True, help="Input FASTA file (single RNA sequence)."
     ),
     output_dir: Path = typer.Option(
-        "./rnapipe_output", "-o", "--output-dir", help="Output directory."
+        "./rnapipey_output", "-o", "--output-dir", help="Output directory."
     ),
     config: Optional[Path] = typer.Option(
         None, "-c", "--config", help="YAML config file."
@@ -71,7 +71,7 @@ def run(
 ) -> None:
     """Run the full RNA 3D structure prediction pipeline."""
     output_dir.mkdir(parents=True, exist_ok=True)
-    setup_logging(log_file=output_dir / "logs" / "rnapipe.log", verbose=verbose)
+    setup_logging(log_file=output_dir / "logs" / "rnapipey.log", verbose=verbose)
 
     cfg = load_config(config)
 
@@ -94,7 +94,7 @@ def run(
         )
         console.print("Running stages 1-2 only (sequence analysis + secondary structure).")
 
-    console.print(f"\n[bold]rnapipe v{__version__}[/bold]")
+    console.print(f"\n[bold]rnapipey v{__version__}[/bold]")
     console.print(f"  Input:      {input_fasta}")
     console.print(f"  Output:     {output_dir}")
     console.print(f"  Predictors: {', '.join(predictors) if predictors else 'none'}")
@@ -118,20 +118,20 @@ def check(
     ),
 ) -> None:
     """Check that required external tools are installed and accessible."""
-    from rnapipe.tools.infernal import InfernalTool
-    from rnapipe.tools.viennarna import ViennaRNATool
-    from rnapipe.tools.spotrna import SPOTRNATool
-    from rnapipe.tools.rhofold import RhoFoldTool
-    from rnapipe.tools.simrna import SimRNATool
-    from rnapipe.tools.protenix import ProtenixTool
-    from rnapipe.tools.rnadvisor import RNAdvisorTool
-    from rnapipe.utils import which
+    from rnapipey.tools.infernal import InfernalTool
+    from rnapipey.tools.viennarna import ViennaRNATool
+    from rnapipey.tools.spotrna import SPOTRNATool
+    from rnapipey.tools.rhofold import RhoFoldTool
+    from rnapipey.tools.simrna import SimRNATool
+    from rnapipey.tools.protenix import ProtenixTool
+    from rnapipey.tools.rnadvisor import RNAdvisorTool
+    from rnapipey.utils import which
 
     cfg = load_config(config)
-    tmp = Path("/tmp/rnapipe_check")
+    tmp = Path("/tmp/rnapipey_check")
     tmp.mkdir(exist_ok=True)
 
-    table = Table(title="rnapipe — Tool Availability")
+    table = Table(title="rnapipey — Tool Availability")
     table.add_column("Tool", style="bold")
     table.add_column("Status")
     table.add_column("Notes")
@@ -172,9 +172,9 @@ def report(
 ) -> None:
     """Re-generate the summary report and PyMOL scripts from existing results."""
     import json
-    from rnapipe.report import generate_report, generate_pymol_scripts
-    from rnapipe.tools.base import ToolResult
-    from rnapipe.utils import ensure_dir
+    from rnapipey.report import generate_report, generate_pymol_scripts
+    from rnapipey.tools.base import ToolResult
+    from rnapipey.utils import ensure_dir
 
     vis_dir = ensure_dir(output_dir / "05_visualization")
     fasta_path = output_dir / "input" / "query.fasta"

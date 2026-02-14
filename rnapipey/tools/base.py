@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from rnapipe.utils import CmdResult, run_cmd
+from rnapipey.utils import CmdResult, run_cmd
 
 
 @dataclass

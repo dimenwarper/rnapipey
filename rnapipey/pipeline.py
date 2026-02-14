@@ -8,19 +8,19 @@ import shutil
 from pathlib import Path
 from typing import Any
 
-from rnapipe.config import PipelineConfig
-from rnapipe.tools.base import ToolResult
-from rnapipe.tools.infernal import InfernalTool
-from rnapipe.tools.protenix import ProtenixTool
-from rnapipe.tools.rhofold import RhoFoldTool
-from rnapipe.tools.rnadvisor import RNAdvisorTool
-from rnapipe.tools.simrna import SimRNATool
-from rnapipe.tools.spotrna import SPOTRNATool
-from rnapipe.tools.viennarna import ViennaRNATool
-from rnapipe.report import generate_report, generate_pymol_scripts
-from rnapipe.utils import ensure_dir, read_fasta, write_fasta
+from rnapipey.config import PipelineConfig
+from rnapipey.tools.base import ToolResult
+from rnapipey.tools.infernal import InfernalTool
+from rnapipey.tools.protenix import ProtenixTool
+from rnapipey.tools.rhofold import RhoFoldTool
+from rnapipey.tools.rnadvisor import RNAdvisorTool
+from rnapipey.tools.simrna import SimRNATool
+from rnapipey.tools.spotrna import SPOTRNATool
+from rnapipey.tools.viennarna import ViennaRNATool
+from rnapipey.report import generate_report, generate_pymol_scripts
+from rnapipey.utils import ensure_dir, read_fasta, write_fasta
 
-logger = logging.getLogger("rnapipe")
+logger = logging.getLogger("rnapipey")
 
 PREDICTOR_CLASSES = {
     "rhofold": RhoFoldTool,

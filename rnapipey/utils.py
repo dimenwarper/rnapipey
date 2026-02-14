@@ -9,7 +9,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-logger = logging.getLogger("rnapipe")
+logger = logging.getLogger("rnapipey")
 
 
 def setup_logging(log_file: Path | None = None, verbose: bool = False) -> None:

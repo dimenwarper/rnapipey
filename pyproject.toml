@@ -1,0 +1,24 @@
+[project]
+name = "rnapipe"
+version = "0.1.0"
+description = "RNA 3D structure prediction pipeline"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = [
+    "typer>=0.9.0",
+    "pyyaml>=6.0",
+    "rich>=13.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "ruff>=0.1.0",
+]
+
+[project.scripts]
+rnapipe = "rnapipe.cli:app"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

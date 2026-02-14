@@ -1,0 +1,44 @@
+# rnapipe default configuration
+# Copy this file and modify paths for your environment.
+
+tools:
+  # Infernal / Rfam
+  cmscan: cmscan
+  cmfetch: cmfetch
+  cmalign: cmalign
+  rfam_cm: ""          # path to Rfam.cm (required for infernal)
+  rfam_clanin: ""      # path to Rfam.clanin
+
+  # ViennaRNA
+  rnafold: RNAfold
+
+  # SPOT-RNA (optional)
+  spotrna: ""          # path to SPOT-RNA.py
+
+  # RhoFold+
+  rhofold:
+    script: ""         # path to RhoFold/inference.py
+    model_dir: ""      # path to pretrained weights
+    device: "cuda:0"
+
+  # SimRNA
+  simrna:
+    binary: ""         # path to SimRNA binary
+    data_dir: ""       # path to SimRNA/data
+    replicas: 10
+    steps: 10000000
+    clustering_top_n: 5
+
+  # Protenix
+  protenix:
+    binary: protenix
+    model: ""          # model path or empty for default
+
+  # RNAdvisor 2
+  rnadvisor:
+    docker: true
+    metrics:
+      - rsRNASP
+      - DFIRE
+      - RASP
+      - MCQ

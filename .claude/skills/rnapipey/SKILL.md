@@ -1,4 +1,10 @@
-# rnapipey — Project Context for Claude
+---
+name: rnapipey
+description: Project context for the rnapipey RNA 3D structure prediction pipeline. Use this when working on pipeline code, adding new tools, running predictions, or debugging tool wrapper issues.
+user-invocable: false
+---
+
+# rnapipey — Project Context
 
 ## What is this project?
 
@@ -58,6 +64,16 @@ Or use `export PATH="$HOME/.pixi/bin:$PATH"` in Bash tool calls.
 3. **3D prediction** — One or more of: RhoFold+, SimRNA, Protenix
 4. **Scoring** — RNAdvisor (runs via Docker containers: DFIRE, RASP, rsRNASP, MCQ)
 5. **Report** — summary.md + PyMOL visualization scripts
+
+## Adding a new tool wrapper
+
+1. Create `rnapipey/tools/<toolname>.py` extending `BaseTool`
+2. Implement `check()` (returns bool) and `run()` (returns ToolResult)
+3. Add a config dataclass in `config.py` (e.g. `FarfarConfig`)
+4. Add the config field to `ToolsConfig`
+5. Register in `cli.py` (add `--<toolname>` flag + import in `check` and `run`)
+6. Add to `pipeline.py` predictor dispatch
+7. Add config section in `install_tools.sh` `generate_config()`
 
 ## Common patterns
 

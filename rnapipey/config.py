@@ -58,8 +58,16 @@ class ToolsConfig:
 
 
 @dataclass
+class EnsembleConfig:
+    nstruct: int = 1
+    cluster: bool = True
+    cluster_cutoff: float = 5.0  # RMSD in Angstroms
+
+
+@dataclass
 class PipelineConfig:
     tools: ToolsConfig = field(default_factory=ToolsConfig)
+    ensemble: EnsembleConfig = field(default_factory=EnsembleConfig)
 
 
 def _deep_merge(base: dict, override: dict) -> dict:
@@ -89,6 +97,7 @@ def _dict_to_dataclass(cls: type, data: dict[str, Any]) -> Any:
                 "ProtenixConfig": ProtenixConfig,
                 "RNAdvisorConfig": RNAdvisorConfig,
                 "ToolsConfig": ToolsConfig,
+                "EnsembleConfig": EnsembleConfig,
             })
         if isinstance(val, dict) and hasattr(ft, "__dataclass_fields__"):
             kwargs[key] = _dict_to_dataclass(ft, val)

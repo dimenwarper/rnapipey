@@ -78,9 +78,16 @@ def run_cmd(
     timeout: int = 86400,
     stdout_file: Path | None = None,
     stderr_file: Path | None = None,
+    env: dict[str, str] | None = None,
 ) -> CmdResult:
     """Run a subprocess with logging and timing."""
     logger.info("Running: %s", " ".join(cmd))
+    import os
+
+    run_env = None
+    if env:
+        run_env = {**os.environ, **env}
+
     start = time.monotonic()
     proc = subprocess.run(
         cmd,
@@ -88,6 +95,7 @@ def run_cmd(
         capture_output=True,
         text=True,
         timeout=timeout,
+        env=run_env,
     )
     elapsed = time.monotonic() - start
     logger.debug("Finished in %.1fs (exit %d)", elapsed, proc.returncode)

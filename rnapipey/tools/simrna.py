@@ -29,6 +29,7 @@ class SimRNATool(BaseTool):
     def run(self, **kwargs: Any) -> ToolResult:
         fasta_path: Path = kwargs["fasta_path"]
         secondary_structure: str = kwargs.get("secondary_structure", "")
+        nstruct: int | None = kwargs.get("nstruct")
 
         records = read_fasta(fasta_path)
         if not records:
@@ -46,13 +47,20 @@ class SimRNATool(BaseTool):
         if secondary_structure:
             restraints_file = self._generate_restraints(secondary_structure)
 
+        # Override replicas/clustering_top_n from nstruct if provided
+        replicas = self.config.replicas
+        clustering_top_n = self.config.clustering_top_n
+        if nstruct is not None and nstruct > 1:
+            replicas = max(replicas, nstruct)
+            clustering_top_n = nstruct
+
         # Run SimRNA
         cmd = [
             self.config.binary,
             "-s", str(input_file),
             "-o", str(self.work_dir / "simrna_run"),
             "-n", str(self.config.steps),
-            "-R", str(self.config.replicas),
+            "-R", str(replicas),
         ]
         if self.config.data_dir:
             cmd.extend(["-E", str(self.config.data_dir)])
@@ -69,7 +77,7 @@ class SimRNATool(BaseTool):
 
         # Process trajectory: extract lowest energy frames, cluster
         trafl_files = list(self.work_dir.glob("*.trafl"))
-        pdb_files = self._cluster_and_extract(trafl_files)
+        pdb_files = self._cluster_and_extract(trafl_files, clustering_top_n)
 
         return ToolResult(
             success=len(pdb_files) > 0,
@@ -100,12 +108,15 @@ class SimRNATool(BaseTool):
         restraints_file.write_text("\n".join(lines) + "\n")
         return restraints_file
 
-    def _cluster_and_extract(self, trafl_files: list[Path]) -> list[Path]:
+    def _cluster_and_extract(
+        self, trafl_files: list[Path], top_n: int | None = None
+    ) -> list[Path]:
         """Extract top N structures from SimRNA trajectory files.
 
         SimRNA provides clustering scripts (SimRNA_trafl2pdbs). If not available,
         we extract the lowest-energy frames directly from the .trafl file.
         """
+        effective_top_n = top_n if top_n is not None else self.config.clustering_top_n
         pdb_files: list[Path] = []
         if not trafl_files:
             return pdb_files
@@ -118,7 +129,7 @@ class SimRNATool(BaseTool):
             result = self._run_cmd([
                 trafl2pdbs,
                 str(trafl),
-                str(self.config.clustering_top_n),
+                str(effective_top_n),
             ])
             pdb_files = sorted(self.work_dir.glob("simrna_run*.pdb"))
         else:
@@ -130,4 +141,4 @@ class SimRNATool(BaseTool):
                 "Run SimRNA_trafl2pdbs manually on: %s", trafl
             )
 
-        return pdb_files[: self.config.clustering_top_n]
+        return pdb_files[:effective_top_n]

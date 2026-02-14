@@ -44,10 +44,12 @@ class BaseTool(ABC):
 
     def _run_cmd(self, cmd: list[str], **kwargs: Any) -> CmdResult:
         """Run a subprocess with stdout/stderr captured to log files."""
+        passthrough_keys = {"timeout", "env"}
+        extra = {k: v for k, v in kwargs.items() if k in passthrough_keys}
         return run_cmd(
             cmd,
             work_dir=kwargs.get("work_dir", self.work_dir),
             stdout_file=self.logs_dir / f"{self.name}.stdout",
             stderr_file=self.logs_dir / f"{self.name}.stderr",
-            **{k: v for k, v in kwargs.items() if k != "work_dir"},
+            **extra,
         )

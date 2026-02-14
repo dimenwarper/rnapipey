@@ -31,13 +31,16 @@ class ProtenixTool(BaseTool):
     def run(self, **kwargs: Any) -> ToolResult:
         fasta_path: Path = kwargs["fasta_path"]
         msa_path: Path | None = kwargs.get("msa_path")
+        seeds: list[int] = kwargs.get("seeds", [42])
 
         records = read_fasta(fasta_path)
         if not records:
             return ToolResult(success=False, error_message="Empty FASTA file")
 
-        # Build Protenix input JSON
-        input_json = self._build_input_json(records[0].sequence, records[0].id)
+        # Build Protenix input JSON with multiple seeds
+        input_json = self._build_input_json(
+            records[0].sequence, records[0].id, seeds=seeds
+        )
         json_path = self.work_dir / "input.json"
         json_path.write_text(json.dumps(input_json, indent=2))
 
@@ -60,13 +63,14 @@ class ProtenixTool(BaseTool):
             )
 
         # Find output structure files (CIF or PDB)
-        cif_files = list(self.work_dir.rglob("*.cif"))
-        pdb_files = list(self.work_dir.rglob("*.pdb"))
-        structure = cif_files[0] if cif_files else (pdb_files[0] if pdb_files else None)
+        cif_files = sorted(self.work_dir.rglob("*.cif"))
+        pdb_files = sorted(self.work_dir.rglob("*.pdb"))
+        all_structures = cif_files + pdb_files
+        structure = all_structures[0] if all_structures else None
 
         # Find confidence scores
         json_files = list(self.work_dir.rglob("*confidence*.json"))
-        confidence = {}
+        confidence: dict[str, Any] = {}
         if json_files:
             try:
                 confidence = json.loads(json_files[0].read_text())
@@ -77,17 +81,20 @@ class ProtenixTool(BaseTool):
             success=structure is not None,
             output_files={
                 "pdb": structure,
+                "all_pdbs": all_structures,
                 "input_json": json_path,
             },
             metrics=confidence,
             runtime_seconds=result.runtime_seconds,
         )
 
-    def _build_input_json(self, sequence: str, name: str) -> dict:
+    def _build_input_json(
+        self, sequence: str, name: str, seeds: list[int] | None = None
+    ) -> dict:
         """Build Protenix inference input JSON for a single RNA chain."""
         return {
             "name": f"rnapipey_{name}",
-            "modelSeeds": [42],
+            "modelSeeds": seeds or [42],
             "sequences": [
                 {
                     "rnaSequence": {

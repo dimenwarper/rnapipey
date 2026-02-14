@@ -66,6 +66,13 @@ def run(
     skip_scoring: bool = typer.Option(
         False, "--skip-scoring", help="Skip model scoring with RNAdvisor."
     ),
+    # Ensemble
+    nstruct: int = typer.Option(
+        1, "--nstruct", "-n", help="Structures per predictor."
+    ),
+    device: str = typer.Option(
+        "", "--device", help="Compute device (e.g. cuda:0)."
+    ),
     # Misc
     verbose: bool = typer.Option(False, "-v", "--verbose", help="Verbose logging."),
 ) -> None:
@@ -98,6 +105,10 @@ def run(
     console.print(f"  Input:      {input_fasta}")
     console.print(f"  Output:     {output_dir}")
     console.print(f"  Predictors: {', '.join(predictors) if predictors else 'none'}")
+    if nstruct > 1:
+        console.print(f"  Ensemble:   {nstruct} structures per predictor")
+    if device:
+        console.print(f"  Device:     {device}")
     console.print()
 
     pipeline = Pipeline(cfg, output_dir.resolve())
@@ -107,6 +118,8 @@ def run(
         skip_infernal=skip_infernal,
         run_spotrna=spotrna,
         skip_scoring=skip_scoring,
+        nstruct=nstruct,
+        device=device,
     )
     console.print(f"\n[green]Done![/green] Results in: {output_dir}")
 

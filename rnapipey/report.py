@@ -17,6 +17,7 @@ def generate_report(
     predictor_results: dict[str, ToolResult],
     scoring_result: ToolResult | None,
     ss_result: ToolResult | None,
+    ensemble_result: Any = None,
 ) -> Path:
     """Write a markdown summary report."""
     report_path = vis_dir / "summary.md"
@@ -51,17 +52,56 @@ def generate_report(
     lines.append("## 3D Structure Predictions")
     lines.append("")
     if predictor_results:
-        lines.append("| Predictor | Status | Output |")
-        lines.append("|-----------|--------|--------|")
+        lines.append("| Predictor | Status | Output | Structures |")
+        lines.append("|-----------|--------|--------|------------|")
         for name, result in predictor_results.items():
             status = "OK" if result.success else "FAILED"
             pdb = result.output_files.get("pdb", "—")
             if pdb and isinstance(pdb, Path):
                 pdb = pdb.name
-            lines.append(f"| {name} | {status} | {pdb} |")
+            all_pdbs = result.output_files.get("all_pdbs", [])
+            n_structs = len(all_pdbs) if all_pdbs else (1 if result.success else 0)
+            lines.append(f"| {name} | {status} | {pdb} | {n_structs} |")
         lines.append("")
     else:
         lines.append("No 3D predictions were run.\n")
+
+    # Confidence Metrics (per-predictor pLDDT/pTM)
+    confidence_rows = []
+    for name, result in predictor_results.items():
+        if not result.success:
+            continue
+        metrics = result.metrics
+        row: dict[str, str] = {"Predictor": name}
+        if "plddt_mean" in metrics:
+            row["pLDDT (mean)"] = f"{metrics['plddt_mean']:.1f}"
+        if "ptm" in metrics:
+            row["pTM"] = f"{metrics['ptm']:.3f}"
+        if "iptm" in metrics:
+            row["ipTM"] = f"{metrics['iptm']:.3f}"
+        if "ranking_score" in metrics:
+            row["Ranking Score"] = f"{metrics['ranking_score']:.3f}"
+        if len(row) > 1:
+            confidence_rows.append(row)
+
+    if confidence_rows:
+        lines.append("## Confidence Metrics")
+        lines.append("")
+        all_cols = []
+        for row in confidence_rows:
+            for k in row:
+                if k not in all_cols:
+                    all_cols.append(k)
+        lines.append("| " + " | ".join(all_cols) + " |")
+        lines.append("|" + "|".join(["-------"] * len(all_cols)) + "|")
+        for row in confidence_rows:
+            vals = [row.get(c, "—") for c in all_cols]
+            lines.append("| " + " | ".join(vals) + " |")
+        lines.append("")
+
+    # Ensemble Analysis
+    if ensemble_result is not None:
+        _append_ensemble_section(lines, ensemble_result)
 
     # Scoring
     if scoring_result and scoring_result.success:
@@ -104,10 +144,59 @@ def generate_report(
     return report_path
 
 
+def _append_ensemble_section(lines: list[str], ensemble_result: Any) -> None:
+    """Append ensemble analysis sections to the report."""
+    clusters = ensemble_result.clusters
+    n_total = len(ensemble_result.pdb_files)
+    n_clusters = len(clusters)
+    n_consensus = sum(1 for c in clusters if c.is_consensus)
+
+    lines.append("## Ensemble Analysis")
+    lines.append("")
+    lines.append(f"- **Total structures**: {n_total}")
+    lines.append(f"- **Number of clusters**: {n_clusters}")
+    lines.append(f"- **Consensus clusters**: {n_consensus} (structures from 2+ predictors)")
+    lines.append("")
+
+    # Cluster summary table
+    lines.append("### Cluster Summary")
+    lines.append("")
+    lines.append("| Cluster | Size | Predictors | Representative | Mean RMSD (A) | Consensus |")
+    lines.append("|---------|------|------------|----------------|---------------|-----------|")
+    for c in clusters:
+        preds = ", ".join(sorted(set(c.member_predictors)))
+        rep_name = c.representative.name
+        consensus = "Yes" if c.is_consensus else "No"
+        lines.append(
+            f"| {c.cluster_id} | {len(c.members)} | {preds} | {rep_name} | {c.mean_rmsd:.2f} | {consensus} |"
+        )
+    lines.append("")
+
+    # Consensus structures section
+    consensus_clusters = [c for c in clusters if c.is_consensus]
+    if consensus_clusters:
+        lines.append("### Consensus Structures")
+        lines.append("")
+        lines.append(
+            "These clusters contain structures from multiple predictors, "
+            "indicating higher confidence in the fold:"
+        )
+        lines.append("")
+        for c in consensus_clusters:
+            preds = ", ".join(sorted(set(c.member_predictors)))
+            lines.append(
+                f"- **Cluster {c.cluster_id}**: {len(c.members)} structures "
+                f"from {preds} (mean RMSD: {c.mean_rmsd:.2f} A, "
+                f"representative: `{c.representative.name}`)"
+            )
+        lines.append("")
+
+
 def generate_pymol_scripts(
     vis_dir: Path,
     predictor_results: dict[str, ToolResult],
     scoring_result: ToolResult | None,
+    ensemble_result: Any = None,
 ) -> None:
     """Generate PyMOL .pml scripts for visualization."""
     # Collect all PDB paths
@@ -191,3 +280,63 @@ def generate_pymol_scripts(
         "# Use: ray 1200, 900 to render",
     ]
     (vis_dir / "view_best.pml").write_text("\n".join(best_lines) + "\n")
+
+    # view_clusters.pml: ensemble visualization (when clustering was performed)
+    if ensemble_result is not None:
+        _generate_cluster_pymol(vis_dir, ensemble_result)
+
+
+def _generate_cluster_pymol(vis_dir: Path, ensemble_result: Any) -> None:
+    """Generate PyMOL script for cluster visualization."""
+    cluster_colors = [
+        "marine", "red", "forest", "orange", "purple", "cyan",
+        "yellow", "salmon", "lime", "slate",
+    ]
+    rep_color = "white"
+
+    lines = [
+        "# rnapipey: Ensemble cluster visualization",
+        "# Structures colored by cluster, representatives highlighted",
+        "bg_color white",
+        "set cartoon_ring_mode, 3",
+        "set cartoon_nucleic_acid_mode, 4",
+        "",
+    ]
+
+    loaded: list[str] = []
+    ref_name = None
+
+    for cluster in ensemble_result.clusters:
+        color = cluster_colors[(cluster.cluster_id - 1) % len(cluster_colors)]
+
+        for member in cluster.members:
+            if not member.exists():
+                continue
+            obj_name = f"c{cluster.cluster_id}_{member.stem}"
+            lines.append(f"load {member}, {obj_name}")
+            lines.append(f"color {color}, {obj_name}")
+            lines.append(f"show cartoon, {obj_name}")
+
+            # Highlight representative with thicker cartoon
+            if member == cluster.representative:
+                lines.append(f"set cartoon_tube_radius, 0.4, {obj_name}")
+                lines.append(f"# Representative of cluster {cluster.cluster_id}")
+
+            loaded.append(obj_name)
+            if ref_name is None:
+                ref_name = obj_name
+            lines.append("")
+
+    # Align all to first
+    if ref_name and len(loaded) > 1:
+        lines.append("# Align all structures")
+        for obj in loaded[1:]:
+            lines.append(f"align {obj}, {ref_name}")
+        lines.append("")
+
+    lines.extend([
+        "zoom",
+        "set ray_opaque_background, 0",
+        "# Use: ray 1200, 900 to render",
+    ])
+    (vis_dir / "view_clusters.pml").write_text("\n".join(lines) + "\n")

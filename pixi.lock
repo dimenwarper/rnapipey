@@ -6896,11 +6896,12 @@ packages:
 - pypi: ./
   name: rnapipey
   version: 0.1.0
-  sha256: c9c6b5df5c5076e31ba719e94afa09f360b7f1b053f127586c734cac1b812e4d
+  sha256: ca1c7ced987d866c17efb970e372e27d5d298af3c051d3cb91fed98da72c2134
   requires_dist:
   - typer>=0.9.0
   - pyyaml>=6.0
   - rich>=13.0
+  - scipy>=1.10
   requires_python: '>=3.10'
 - conda: https://conda.anaconda.org/conda-forge/linux-64/rocm-core-7.0.2-h54a6638_0.conda
   sha256: 2e762eb624cc396fd0ca902fd48749c61359f1eb91f1217ce11a78f66d5d16bb

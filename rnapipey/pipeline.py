@@ -50,6 +50,8 @@ class Pipeline:
         skip_infernal: bool = False,
         run_spotrna: bool = False,
         skip_scoring: bool = False,
+        nstruct: int = 1,
+        device: str = "",
     ) -> None:
         """Run the full pipeline."""
         # Copy input
@@ -78,18 +80,30 @@ class Pipeline:
 
         # Stage 3: 3D Prediction
         predictor_results = self._run_stage3(
-            query_fasta, predictors, msa_path, dot_bracket
+            query_fasta, predictors, msa_path, dot_bracket,
+            nstruct=nstruct, device=device,
         )
+
+        # Stage 3b: Ensemble clustering (when nstruct > 1)
+        ensemble_result = None
+        if nstruct > 1 and predictor_results:
+            ensemble_result = self._run_stage3b_clustering(
+                predictor_results, self.config.ensemble.cluster_cutoff
+            )
 
         # Stage 4: Scoring
         scoring_result = None
         if not skip_scoring:
-            scoring_result = self._run_stage4(predictor_results)
+            scoring_result = self._run_stage4(
+                predictor_results, ensemble_result
+            )
         else:
             logger.info("Skipping scoring (--skip-scoring)")
 
         # Stage 5: Report
-        self._run_stage5(predictor_results, scoring_result, ss_result)
+        self._run_stage5(
+            predictor_results, scoring_result, ss_result, ensemble_result
+        )
 
         logger.info("Pipeline complete. Results in: %s", self.output_dir)
 
@@ -185,6 +199,8 @@ class Pipeline:
         predictors: list[str],
         msa_path: Path | None,
         secondary_structure: str,
+        nstruct: int = 1,
+        device: str = "",
     ) -> dict[str, ToolResult]:
         """Stage 3: 3D structure prediction with selected methods."""
         results: dict[str, ToolResult] = {}
@@ -194,13 +210,13 @@ class Pipeline:
             stage_key = f"stage3_{pred_name}"
             if self._completed(stage_key):
                 logger.info("Stage 3 (%s) already completed, skipping", pred_name)
-                # Try to recover PDB
+                # Try to recover PDB files
                 work_dir = pred_dir / pred_name
-                pdbs = list(work_dir.glob("*.pdb")) + list(work_dir.rglob("*.cif"))
+                pdbs = sorted(work_dir.rglob("*.pdb")) + sorted(work_dir.rglob("*.cif"))
                 if pdbs:
                     results[pred_name] = ToolResult(
                         success=True,
-                        output_files={"pdb": pdbs[0]},
+                        output_files={"pdb": pdbs[0], "all_pdbs": pdbs},
                     )
                 continue
 
@@ -208,37 +224,225 @@ class Pipeline:
                 logger.error("Unknown predictor: %s", pred_name)
                 continue
 
-            work_dir = ensure_dir(pred_dir / pred_name)
             config_attr = PREDICTOR_CONFIG_ATTR[pred_name]
             tool_config = getattr(self.config.tools, config_attr)
-            tool = PREDICTOR_CLASSES[pred_name](tool_config, work_dir, self.logs_dir)
 
-            if not tool.check():
-                logger.warning("%s not available, skipping", pred_name)
-                self._mark(stage_key, "skipped")
-                continue
+            if pred_name == "rhofold" and nstruct > 1:
+                result = self._run_rhofold_ensemble(
+                    fasta_path, msa_path, tool_config, pred_dir,
+                    nstruct=nstruct, device=device,
+                )
+            elif pred_name == "protenix":
+                result = self._run_protenix(
+                    fasta_path, msa_path, tool_config, pred_dir,
+                    nstruct=nstruct,
+                )
+            elif pred_name == "simrna":
+                result = self._run_simrna(
+                    fasta_path, secondary_structure, tool_config, pred_dir,
+                    nstruct=nstruct,
+                )
+            else:
+                # Single run (rhofold nstruct=1 or unknown)
+                work_dir = ensure_dir(pred_dir / pred_name)
+                tool = PREDICTOR_CLASSES[pred_name](tool_config, work_dir, self.logs_dir)
+                if not tool.check():
+                    logger.warning("%s not available, skipping", pred_name)
+                    self._mark(stage_key, "skipped")
+                    continue
 
-            logger.info("Stage 3: Running %s...", pred_name)
-            kwargs: dict[str, Any] = {"fasta_path": fasta_path}
-            if pred_name in ("rhofold", "protenix") and msa_path:
-                kwargs["msa_path"] = msa_path
-            if pred_name == "simrna":
-                kwargs["secondary_structure"] = secondary_structure
+                logger.info("Stage 3: Running %s...", pred_name)
+                kwargs: dict[str, Any] = {"fasta_path": fasta_path}
+                if pred_name in ("rhofold", "protenix") and msa_path:
+                    kwargs["msa_path"] = msa_path
+                if device:
+                    kwargs["device"] = device
+                result = tool.run(**kwargs)
 
-            result = tool.run(**kwargs)
             results[pred_name] = result
             self._mark(stage_key, "completed" if result.success else "failed")
 
             if result.success:
                 pdb = result.output_files.get("pdb")
-                logger.info("%s completed: %s", pred_name, pdb)
+                all_pdbs = result.output_files.get("all_pdbs", [])
+                logger.info(
+                    "%s completed: %s (%d structures)",
+                    pred_name, pdb, len(all_pdbs) if all_pdbs else 1,
+                )
             else:
                 logger.warning("%s failed: %s", pred_name, result.error_message)
 
         return results
 
+    def _run_rhofold_ensemble(
+        self,
+        fasta_path: Path,
+        msa_path: Path | None,
+        tool_config: Any,
+        pred_dir: Path,
+        nstruct: int,
+        device: str,
+    ) -> ToolResult:
+        """Run RhoFold+ multiple times with different seeds."""
+        all_pdbs: list[Path] = []
+        all_metrics: list[dict] = []
+        total_time = 0.0
+
+        for i in range(nstruct):
+            run_dir = ensure_dir(pred_dir / "rhofold" / f"run_{i}")
+            tool = RhoFoldTool(tool_config, run_dir, self.logs_dir)
+
+            if not tool.check():
+                logger.warning("RhoFold+ not available, skipping")
+                return ToolResult(success=False, error_message="RhoFold+ not available")
+
+            logger.info("Stage 3: Running RhoFold+ (seed %d, %d/%d)...", i, i + 1, nstruct)
+            kwargs: dict[str, Any] = {
+                "fasta_path": fasta_path,
+                "seed": i,
+            }
+            if msa_path:
+                kwargs["msa_path"] = msa_path
+            if device:
+                kwargs["device"] = device
+
+            result = tool.run(**kwargs)
+            total_time += result.runtime_seconds
+
+            if result.success:
+                run_pdbs = result.output_files.get("all_pdbs", [])
+                if run_pdbs:
+                    all_pdbs.extend(run_pdbs)
+                elif result.output_files.get("pdb"):
+                    all_pdbs.append(result.output_files["pdb"])
+                all_metrics.append(result.metrics)
+            else:
+                logger.warning("RhoFold+ run %d failed: %s", i, result.error_message)
+
+        if not all_pdbs:
+            return ToolResult(
+                success=False,
+                error_message="All RhoFold+ runs failed",
+                runtime_seconds=total_time,
+            )
+
+        # Aggregate metrics
+        merged_metrics: dict[str, Any] = {}
+        plddt_values = [m["plddt_mean"] for m in all_metrics if "plddt_mean" in m]
+        if plddt_values:
+            merged_metrics["plddt_mean"] = float(sum(plddt_values) / len(plddt_values))
+            merged_metrics["plddt_per_run"] = plddt_values
+
+        return ToolResult(
+            success=True,
+            output_files={"pdb": all_pdbs[0], "all_pdbs": all_pdbs},
+            metrics=merged_metrics,
+            runtime_seconds=total_time,
+        )
+
+    def _run_protenix(
+        self,
+        fasta_path: Path,
+        msa_path: Path | None,
+        tool_config: Any,
+        pred_dir: Path,
+        nstruct: int,
+    ) -> ToolResult:
+        """Run Protenix with multiple seeds in a single invocation."""
+        work_dir = ensure_dir(pred_dir / "protenix")
+        tool = ProtenixTool(tool_config, work_dir, self.logs_dir)
+
+        if not tool.check():
+            logger.warning("Protenix not available, skipping")
+            return ToolResult(success=False, error_message="Protenix not available")
+
+        seeds = list(range(42, 42 + nstruct))
+        logger.info("Stage 3: Running Protenix (seeds %s)...", seeds)
+
+        kwargs: dict[str, Any] = {
+            "fasta_path": fasta_path,
+            "seeds": seeds,
+        }
+        if msa_path:
+            kwargs["msa_path"] = msa_path
+
+        return tool.run(**kwargs)
+
+    def _run_simrna(
+        self,
+        fasta_path: Path,
+        secondary_structure: str,
+        tool_config: Any,
+        pred_dir: Path,
+        nstruct: int,
+    ) -> ToolResult:
+        """Run SimRNA with nstruct override for replicas/clustering."""
+        work_dir = ensure_dir(pred_dir / "simrna")
+        tool = SimRNATool(tool_config, work_dir, self.logs_dir)
+
+        if not tool.check():
+            logger.warning("SimRNA not available, skipping")
+            return ToolResult(success=False, error_message="SimRNA not available")
+
+        logger.info("Stage 3: Running SimRNA (nstruct=%d)...", nstruct)
+        return tool.run(
+            fasta_path=fasta_path,
+            secondary_structure=secondary_structure,
+            nstruct=nstruct if nstruct > 1 else None,
+        )
+
+    def _run_stage3b_clustering(
+        self,
+        predictor_results: dict[str, ToolResult],
+        cutoff: float,
+    ) -> Any:
+        """Stage 3b: Cluster all structures across predictors by RMSD."""
+        from rnapipey.ensemble import cluster_structures, EnsembleResult
+
+        stage_key = "stage3b_clustering"
+        if self._completed(stage_key):
+            logger.info("Stage 3b (Clustering) already completed, skipping")
+            return None
+
+        all_pdbs: list[Path] = []
+        all_labels: list[str] = []
+
+        for pred_name, result in predictor_results.items():
+            if not result.success:
+                continue
+            pdbs = result.output_files.get("all_pdbs", [])
+            if not pdbs:
+                pdb = result.output_files.get("pdb")
+                if pdb and isinstance(pdb, Path) and pdb.exists():
+                    pdbs = [pdb]
+            for p in pdbs:
+                if isinstance(p, Path) and p.exists():
+                    all_pdbs.append(p)
+                    all_labels.append(pred_name)
+
+        if len(all_pdbs) < 2:
+            logger.info("Only %d structure(s), skipping clustering", len(all_pdbs))
+            self._mark(stage_key, "skipped")
+            return None
+
+        logger.info(
+            "Stage 3b: Clustering %d structures (cutoff=%.1f A)...",
+            len(all_pdbs), cutoff,
+        )
+
+        try:
+            ensemble_result = cluster_structures(all_pdbs, all_labels, cutoff)
+            self._mark(stage_key, "completed")
+            return ensemble_result
+        except Exception as e:
+            logger.warning("Clustering failed: %s", e)
+            self._mark(stage_key, "failed")
+            return None
+
     def _run_stage4(
-        self, predictor_results: dict[str, ToolResult]
+        self,
+        predictor_results: dict[str, ToolResult],
+        ensemble_result: Any = None,
     ) -> ToolResult | None:
         """Stage 4: Model evaluation and scoring."""
         if self._completed("stage4"):
@@ -249,13 +453,26 @@ class Pipeline:
                 return ToolResult(success=True, metrics={"scores": data})
             return None
 
-        # Collect all PDB files from predictors
+        # Collect PDB files to score
         pdb_files: list[Path] = []
-        for name, result in predictor_results.items():
-            if result.success:
-                pdb = result.output_files.get("pdb")
-                if pdb and pdb.exists():
-                    pdb_files.append(pdb)
+
+        if ensemble_result is not None:
+            # Score only cluster representatives to save time
+            for cluster in ensemble_result.clusters:
+                rep = cluster.representative
+                if rep.exists():
+                    pdb_files.append(rep)
+            logger.info(
+                "Ensemble mode: scoring %d cluster representatives (not all %d structures)",
+                len(pdb_files), len(ensemble_result.pdb_files),
+            )
+        else:
+            # Score all PDB files from predictors
+            for name, result in predictor_results.items():
+                if result.success:
+                    pdb = result.output_files.get("pdb")
+                    if pdb and pdb.exists():
+                        pdb_files.append(pdb)
 
         if not pdb_files:
             logger.warning("No PDB files to score")
@@ -285,6 +502,7 @@ class Pipeline:
         predictor_results: dict[str, ToolResult],
         scoring_result: ToolResult | None,
         ss_result: ToolResult | None,
+        ensemble_result: Any = None,
     ) -> None:
         """Stage 5: Generate report and visualization scripts."""
         vis_dir = ensure_dir(self.output_dir / "05_visualization")
@@ -292,9 +510,13 @@ class Pipeline:
 
         logger.info("Stage 5: Generating report and visualization scripts...")
         generate_report(
-            vis_dir, fasta_path, predictor_results, scoring_result, ss_result
+            vis_dir, fasta_path, predictor_results, scoring_result, ss_result,
+            ensemble_result=ensemble_result,
         )
-        generate_pymol_scripts(vis_dir, predictor_results, scoring_result)
+        generate_pymol_scripts(
+            vis_dir, predictor_results, scoring_result,
+            ensemble_result=ensemble_result,
+        )
         self._mark("stage5", "completed")
 
     # -- State management --

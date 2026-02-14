@@ -171,7 +171,7 @@ install_simrna() {
                 simrna_url="https://genesilico.pl/software/simrna/version_3.20/SimRNA_64bitIntel_MacOSX_staticLibs.tgz"
                 ;;
             Linux-x86_64)
-                simrna_url="https://genesilico.pl/software/simrna/version_3.20/SimRNA_64bitIntel_Linux_staticLibs.tgz"
+                simrna_url="https://genesilico.pl/software/simrna/version_3.20/SimRNA_64bitIntel_Linux.tgz"
                 ;;
             *)
                 simrna_url="https://genesilico.pl/software/simrna/version_3.20/SimRNA_32bitIntel_Linux.tgz"

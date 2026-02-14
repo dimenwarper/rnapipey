@@ -1,7 +1,7 @@
 ---
 name: rnapipey
 description: Project context for the rnapipey RNA 3D structure prediction pipeline. Use this when working on pipeline code, adding new tools, running predictions, or debugging tool wrapper issues.
-user-invocable: false
+user-invocable: true
 ---
 
 # rnapipey — Project Context

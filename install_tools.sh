@@ -166,16 +166,19 @@ install_simrna() {
         skip "SimRNA already installed."
     else
         local simrna_url
-        case "$(uname -s)" in
-            Darwin)
+        case "$(uname -s)-$(uname -m)" in
+            Darwin-*)
                 simrna_url="https://genesilico.pl/software/simrna/version_3.20/SimRNA_64bitIntel_MacOSX_staticLibs.tgz"
+                ;;
+            Linux-x86_64)
+                simrna_url="https://genesilico.pl/software/simrna/version_3.20/SimRNA_64bitIntel_Linux_staticLibs.tgz"
                 ;;
             *)
                 simrna_url="https://genesilico.pl/software/simrna/version_3.20/SimRNA_32bitIntel_Linux.tgz"
                 ;;
         esac
 
-        info "Downloading SimRNA from genesilico.pl ($(uname -s))..."
+        info "Downloading SimRNA from genesilico.pl ($(uname -s) $(uname -m))..."
         local tmp_tgz="$TOOLS_DIR/SimRNA.tgz"
         curl -fSL --progress-bar -o "$tmp_tgz" "$simrna_url"
 
@@ -194,44 +197,72 @@ install_simrna() {
 }
 
 install_docker() {
-    header "Docker (via colima)"
+    header "Docker"
 
     if command -v docker &>/dev/null; then
         skip "Docker CLI already installed."
-    else
-        if command -v brew &>/dev/null; then
-            info "Installing Docker CLI and Docker Compose via Homebrew..."
-            brew install docker docker-compose
-            ok "Docker CLI installed."
+        # Verify daemon is running
+        if docker info &>/dev/null 2>&1; then
+            ok "Docker daemon is running."
         else
-            fail "Homebrew not found. Install Docker manually:"
+            info "Docker CLI found but daemon not running."
+            info "  Linux:  sudo systemctl start docker"
+            info "  macOS:  colima start"
+        fi
+        return 0
+    fi
+
+    case "$(uname -s)" in
+        Linux)
+            info "Installing Docker on Linux..."
+            if command -v apt-get &>/dev/null; then
+                info "Using apt (Debian/Ubuntu)..."
+                sudo apt-get update -qq
+                sudo apt-get install -y -qq docker.io docker-compose-plugin
+                sudo systemctl enable --now docker
+                sudo usermod -aG docker "$USER" 2>/dev/null || true
+                ok "Docker installed. You may need to log out/in for group changes."
+            elif command -v dnf &>/dev/null; then
+                info "Using dnf (Fedora/RHEL)..."
+                sudo dnf install -y -q docker docker-compose-plugin
+                sudo systemctl enable --now docker
+                sudo usermod -aG docker "$USER" 2>/dev/null || true
+                ok "Docker installed. You may need to log out/in for group changes."
+            elif command -v yum &>/dev/null; then
+                info "Using yum (CentOS/RHEL)..."
+                sudo yum install -y -q docker docker-compose-plugin
+                sudo systemctl enable --now docker
+                sudo usermod -aG docker "$USER" 2>/dev/null || true
+                ok "Docker installed. You may need to log out/in for group changes."
+            else
+                fail "No supported package manager found. Install Docker manually:"
+                info "  https://docs.docker.com/engine/install/"
+                return 1
+            fi
+            ;;
+        Darwin)
+            if command -v brew &>/dev/null; then
+                info "Installing Docker CLI and Colima via Homebrew..."
+                brew install docker docker-compose colima
+                ok "Docker CLI + Colima installed."
+
+                if ! colima status &>/dev/null 2>&1; then
+                    info "Starting Colima..."
+                    colima start --memory 4 --cpu 2
+                    ok "Colima started."
+                fi
+            else
+                fail "Homebrew not found. Install Docker manually:"
+                info "  https://docs.docker.com/get-docker/"
+                return 1
+            fi
+            ;;
+        *)
+            fail "Unsupported OS: $(uname -s). Install Docker manually:"
             info "  https://docs.docker.com/get-docker/"
             return 1
-        fi
-    fi
-
-    if command -v colima &>/dev/null; then
-        skip "Colima already installed."
-    else
-        if command -v brew &>/dev/null; then
-            info "Installing Colima (lightweight Docker runtime for macOS)..."
-            brew install colima
-            ok "Colima installed."
-        else
-            fail "Homebrew not found. Install Colima manually:"
-            info "  brew install colima"
-            return 1
-        fi
-    fi
-
-    # Start colima if not running
-    if colima status &>/dev/null 2>&1; then
-        skip "Colima is already running."
-    else
-        info "Starting Colima..."
-        colima start --memory 4 --cpu 2
-        ok "Colima started."
-    fi
+            ;;
+    esac
 }
 
 # ── Config generation ────────────────────────────────────────────────────────

@@ -15,22 +15,28 @@ Sequence (FASTA) → Rfam/Infernal (MSA) → RNAfold (2D) → 3D Predictors → 
 
 ## Install
 
-Requires [pixi](https://pixi.sh). This single command installs Python, all conda packages (Infernal, ViennaRNA, PyMOL), all pip packages (Protenix, RNAdvisor), and rnapipey itself:
+Requires [pixi](https://pixi.sh).
+
+### 1. Python packages & conda tools
+
+This single command installs Python, all conda packages (Infernal, ViennaRNA, PyMOL, PyTorch), and all pip packages (Protenix, RNAdvisor, huggingface-hub):
 
 ```bash
 pixi install
 ```
 
-### Data & git-based tools
+### 2. Data, models & git-based tools
 
-For tools that need git clones or large data downloads (Rfam, RhoFold+, SPOT-RNA), use the install script:
+For tools that need git clones, binary downloads, or large data files, use the install script:
 
 ```bash
-# Download/clone everything
+# Install everything (Rfam, RhoFold+, SPOT-RNA, SimRNA, Docker)
 ./install_tools.sh --all
 
 # Or pick specific ones
 ./install_tools.sh --rfam --rhofold
+./install_tools.sh --docker        # Docker + Colima for RNAdvisor scoring
+./install_tools.sh --simrna        # SimRNA binary (auto-detects macOS/Linux)
 
 # Regenerate configs/local.yaml from already-installed tools
 ./install_tools.sh --config-only
@@ -38,22 +44,36 @@ For tools that need git clones or large data downloads (Rfam, RhoFold+, SPOT-RNA
 
 This downloads databases to `~/.rnapipey/data/`, clones git-based tools to `~/.rnapipey/tools/`, and generates `configs/local.yaml` with all paths filled in. Run `./install_tools.sh --help` for the full option list.
 
-**Note:** SimRNA requires a manual download (academic license from [genesilico.pl](https://genesilico.pl/SimRNAweb/)), and SPOT-RNA needs a separate Python 3.6 environment — the script will clone it and print setup instructions.
+### 3. RhoFold+ Python package
+
+After cloning RhoFold+ with the install script, install it into the pixi environment:
+
+```bash
+pixi run pip install -e ~/.rnapipey/tools/RhoFold
+```
+
+### Notes
+
+- **SPOT-RNA** needs a separate Python 3.6 environment (TensorFlow 1.14). The script clones the repo and prints setup instructions.
+- **Docker** is required for RNAdvisor scoring. On macOS, `--docker` installs the Docker CLI + [Colima](https://github.com/abiosoft/colima) (lightweight Docker VM) via Homebrew.
 
 ## Usage
 
 ```bash
 # Check which external tools are available
-pixi run rnapipey check
+pixi run rnapipey check -c configs/local.yaml
 
 # Run with specific predictors
-pixi run rnapipey run input.fasta -o results/ --rhofold --simrna
+pixi run rnapipey run input.fasta -o results/ -c configs/local.yaml --rhofold
+
+# Run multiple predictors
+pixi run rnapipey run input.fasta -o results/ -c configs/local.yaml --rhofold --simrna
 
 # Run all predictors
-pixi run rnapipey run input.fasta -o results/ --all
+pixi run rnapipey run input.fasta -o results/ -c configs/local.yaml --all
 
-# With options
-pixi run rnapipey run input.fasta -o results/ --all --skip-infernal --spotrna -v
+# Verbose output
+pixi run rnapipey run input.fasta -o results/ -c configs/local.yaml --rhofold -v
 
 # Regenerate report from existing results
 pixi run rnapipey report results/
@@ -63,33 +83,32 @@ Or activate the environment and run directly:
 
 ```bash
 pixi shell
-rnapipey run input.fasta -o results/ --all
+rnapipey run input.fasta -o results/ -c configs/local.yaml --all
 ```
 
 ## Configuration
 
-Copy and edit `configs/default.yaml` to point to your tool installations:
+The install script generates `configs/local.yaml` with paths to all detected tools. You can also copy and edit `configs/default.yaml`:
 
 ```bash
 pixi run rnapipey run input.fasta -c my_config.yaml --all
 ```
 
-Key config fields are paths to external tool binaries/scripts (RhoFold+ inference script, SimRNA binary, Rfam database, etc).
+Key config fields: tool binary paths, RhoFold+ inference script & weights, SimRNA binary & data directory, RNAdvisor scoring metrics, and device (cpu/cuda).
 
 ## External tools
 
-These are installed by pixi or the install script — rnapipey wraps them via subprocess:
-
 | Tool | Purpose | Install |
 |------|---------|---------|
-| [Infernal](http://eddylab.org/infernal/) + [Rfam](https://rfam.org/) | Sequence analysis, MSA | `pixi install` (conda) + `./install_tools.sh --rfam` (data) |
-| [ViennaRNA](https://www.tbi.univie.ac.at/RNA/) | Secondary structure (RNAfold) | `pixi install` (conda) |
+| [Infernal](http://eddylab.org/infernal/) + [Rfam](https://rfam.org/) | Sequence analysis, MSA | `pixi install` + `./install_tools.sh --rfam` |
+| [ViennaRNA](https://www.tbi.univie.ac.at/RNA/) | Secondary structure (RNAfold) | `pixi install` |
 | [SPOT-RNA](https://github.com/jaswindersingh2/SPOT-RNA) | Pseudoknot detection (optional) | `./install_tools.sh --spotrna` |
-| [RhoFold+](https://github.com/ml4bio/RhoFold) | DL 3D prediction | `./install_tools.sh --rhofold` |
-| [SimRNA](https://genesilico.pl/SimRNAweb/) | Physics-based 3D prediction | Manual (academic license) |
-| [Protenix](https://github.com/bytedance/Protenix) | AF3-class 3D prediction | `pixi install` (pip) |
-| [RNAdvisor](https://github.com/EvryRNA/rnadvisor) | Model scoring | `pixi install` (pip) |
-| [PyMOL](https://pymol.org/) | Visualization (optional) | `pixi install` (conda) |
+| [RhoFold+](https://github.com/ml4bio/RhoFold) | DL 3D prediction | `./install_tools.sh --rhofold` + `pixi run pip install -e` |
+| [SimRNA](https://genesilico.pl/SimRNAweb/) | Physics-based 3D prediction | `./install_tools.sh --simrna` |
+| [Protenix](https://github.com/bytedance/Protenix) | AF3-class 3D prediction | `pixi install` |
+| [RNAdvisor](https://github.com/EvryRNA/rnadvisor) | Model scoring (requires Docker) | `pixi install` + `./install_tools.sh --docker` |
+| [PyMOL](https://pymol.org/) | Visualization (optional) | `pixi install` |
+| [Docker](https://www.docker.com/) + [Colima](https://github.com/abiosoft/colima) | Container runtime for RNAdvisor | `./install_tools.sh --docker` |
 
 ## Output
 
@@ -101,8 +120,14 @@ output/
 ├── 03_3d_prediction/        # per-predictor PDB/CIF files
 ├── 04_scoring/              # RNAdvisor scores + ranking
 ├── 05_visualization/        # summary.md + PyMOL scripts
-├── logs/
+├── logs/                    # per-tool stdout/stderr + pipeline log
 └── pipeline_state.json      # tracks progress for resume
 ```
 
 The pipeline saves state after each stage, so re-running the same command resumes from where it left off.
+
+## Quick test
+
+```bash
+pixi run rnapipey run test_input.fasta -o test_results/ -c configs/local.yaml --rhofold -v
+```

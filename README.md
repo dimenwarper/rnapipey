@@ -15,26 +15,28 @@ Sequence (FASTA) → Rfam/Infernal (MSA) → RNAfold (2D) → 3D Predictors → 
 
 ## Install
 
+Requires [pixi](https://pixi.sh). This single command installs Python, all conda packages (Infernal, ViennaRNA, PyMOL), all pip packages (Protenix, RNAdvisor), and rnapipey itself:
+
 ```bash
-uv sync
+pixi install
 ```
 
-### External tools (automated)
+### Data & git-based tools
 
-Use the included installer to set up all external dependencies into a `rnapipey` conda environment:
+For tools that need git clones or large data downloads (Rfam, RhoFold+, SPOT-RNA), use the install script:
 
 ```bash
-# Install everything
+# Download/clone everything
 ./install_tools.sh --all
 
-# Or pick specific tools
-./install_tools.sh --infernal --viennarna --rfam
+# Or pick specific ones
+./install_tools.sh --rfam --rhofold
 
 # Regenerate configs/local.yaml from already-installed tools
 ./install_tools.sh --config-only
 ```
 
-This creates a conda env `rnapipey`, downloads databases to `~/.rnapipey/data/`, clones git-based tools to `~/.rnapipey/tools/`, and generates `configs/local.yaml` with all paths filled in. Run `./install_tools.sh --help` for the full option list.
+This downloads databases to `~/.rnapipey/data/`, clones git-based tools to `~/.rnapipey/tools/`, and generates `configs/local.yaml` with all paths filled in. Run `./install_tools.sh --help` for the full option list.
 
 **Note:** SimRNA requires a manual download (academic license from [genesilico.pl](https://genesilico.pl/SimRNAweb/)), and SPOT-RNA needs a separate Python 3.6 environment — the script will clone it and print setup instructions.
 
@@ -42,19 +44,26 @@ This creates a conda env `rnapipey`, downloads databases to `~/.rnapipey/data/`,
 
 ```bash
 # Check which external tools are available
-rnapipey check
+pixi run rnapipey check
 
 # Run with specific predictors
-rnapipey run input.fasta -o results/ --rhofold --simrna
+pixi run rnapipey run input.fasta -o results/ --rhofold --simrna
 
 # Run all predictors
-rnapipey run input.fasta -o results/ --all
+pixi run rnapipey run input.fasta -o results/ --all
 
 # With options
-rnapipey run input.fasta -o results/ --all --skip-infernal --spotrna -v
+pixi run rnapipey run input.fasta -o results/ --all --skip-infernal --spotrna -v
 
 # Regenerate report from existing results
-rnapipey report results/
+pixi run rnapipey report results/
+```
+
+Or activate the environment and run directly:
+
+```bash
+pixi shell
+rnapipey run input.fasta -o results/ --all
 ```
 
 ## Configuration
@@ -62,25 +71,25 @@ rnapipey report results/
 Copy and edit `configs/default.yaml` to point to your tool installations:
 
 ```bash
-rnapipey run input.fasta -c my_config.yaml --all
+pixi run rnapipey run input.fasta -c my_config.yaml --all
 ```
 
 Key config fields are paths to external tool binaries/scripts (RhoFold+ inference script, SimRNA binary, Rfam database, etc).
 
 ## External tools
 
-These must be installed separately — rnapipey wraps them via subprocess:
+These are installed by pixi or the install script — rnapipey wraps them via subprocess:
 
 | Tool | Purpose | Install |
 |------|---------|---------|
-| [Infernal](http://eddylab.org/infernal/) + [Rfam](https://rfam.org/) | Sequence analysis, MSA | `conda install -c bioconda infernal` |
-| [ViennaRNA](https://www.tbi.univie.ac.at/RNA/) | Secondary structure (RNAfold) | `conda install -c bioconda viennarna` |
-| [SPOT-RNA](https://github.com/jaswindersingh2/SPOT-RNA) | Pseudoknot detection (optional) | See repo |
-| [RhoFold+](https://github.com/ml4bio/RhoFold) | DL 3D prediction | See repo |
-| [SimRNA](https://genesilico.pl/SimRNAweb/) | Physics-based 3D prediction | See website |
-| [Protenix](https://github.com/bytedance/Protenix) | AF3-class 3D prediction | See repo |
-| [RNAdvisor](https://github.com/EvryRNA/rnadvisor) | Model scoring | Docker or pip |
-| [PyMOL](https://pymol.org/) | Visualization (optional) | `conda install -c conda-forge pymol-open-source` |
+| [Infernal](http://eddylab.org/infernal/) + [Rfam](https://rfam.org/) | Sequence analysis, MSA | `pixi install` (conda) + `./install_tools.sh --rfam` (data) |
+| [ViennaRNA](https://www.tbi.univie.ac.at/RNA/) | Secondary structure (RNAfold) | `pixi install` (conda) |
+| [SPOT-RNA](https://github.com/jaswindersingh2/SPOT-RNA) | Pseudoknot detection (optional) | `./install_tools.sh --spotrna` |
+| [RhoFold+](https://github.com/ml4bio/RhoFold) | DL 3D prediction | `./install_tools.sh --rhofold` |
+| [SimRNA](https://genesilico.pl/SimRNAweb/) | Physics-based 3D prediction | Manual (academic license) |
+| [Protenix](https://github.com/bytedance/Protenix) | AF3-class 3D prediction | `pixi install` (pip) |
+| [RNAdvisor](https://github.com/EvryRNA/rnadvisor) | Model scoring | `pixi install` (pip) |
+| [PyMOL](https://pymol.org/) | Visualization (optional) | `pixi install` (conda) |
 
 ## Output
 

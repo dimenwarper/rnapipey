@@ -1,0 +1,25 @@
+[project]
+name = "rnapipey"
+version = "0.1.0"
+description = "RNA 3D structure prediction pipeline"
+channels = ["conda-forge", "bioconda"]
+platforms = ["linux-64", "osx-arm64", "osx-64"]
+
+[dependencies]
+python = ">=3.10"
+infernal = "*"
+viennarna = "*"
+pymol-open-source = "*"
+
+[pypi-dependencies]
+rnapipey = { path = ".", editable = true }
+protenix = "*"
+rnadvisor = "*"
+
+[feature.dev.pypi-dependencies]
+pytest = ">=7.0"
+ruff = ">=0.1.0"
+
+[environments]
+default = { features = [], solve-group = "default" }
+dev = { features = ["dev"], solve-group = "default" }

@@ -2,17 +2,18 @@
 set -euo pipefail
 
 # ── rnapipey tool installer ──────────────────────────────────────────────────
-# Installs external bioinformatics tools used by the rnapipey pipeline.
-# Usage: ./install_tools.sh --all    (install everything)
-#        ./install_tools.sh --infernal --viennarna   (selective)
+# Downloads data and clones git-based tools that can't be installed via pixi.
+# Conda/pip packages (Infernal, ViennaRNA, PyMOL, Protenix, RNAdvisor) are
+# managed by pixi — just run `pixi install`.
+#
+# Usage: ./install_tools.sh --all
+#        ./install_tools.sh --rfam --rhofold
 #        ./install_tools.sh --help
 # ─────────────────────────────────────────────────────────────────────────────
 
 RNAPIPEY_HOME="${RNAPIPEY_HOME:-$HOME/.rnapipey}"
 DATA_DIR="$RNAPIPEY_HOME/data"
 TOOLS_DIR="$RNAPIPEY_HOME/tools"
-CONDA_ENV="rnapipey"
-PYTHON_VER="3.10"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # ── Colors ───────────────────────────────────────────────────────────────────
@@ -32,88 +33,11 @@ header() { echo -e "\n${BOLD}── $* ──${NC}"; }
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
-ensure_conda() {
-    if ! command -v conda &>/dev/null; then
-        fail "conda not found. Install Miniconda/Mambaforge first."
-        exit 1
-    fi
-}
-
-ensure_env() {
-    if ! conda env list | grep -qw "$CONDA_ENV"; then
-        info "Creating conda environment '$CONDA_ENV' (Python $PYTHON_VER)..."
-        conda create -y -n "$CONDA_ENV" "python>=$PYTHON_VER" pip
-        ok "Environment '$CONDA_ENV' created."
-    else
-        skip "Conda environment '$CONDA_ENV' already exists."
-    fi
-}
-
-# Run a command inside the rnapipey conda env.
-run_in_env() {
-    conda run --no-banner -n "$CONDA_ENV" "$@"
-}
-
 mkdir_p() {
     mkdir -p "$1"
 }
 
-# ── Tool installers ─────────────────────────────────────────────────────────
-
-install_infernal() {
-    header "Infernal"
-    if run_in_env command -v cmscan &>/dev/null; then
-        skip "Infernal already installed in '$CONDA_ENV'."
-        return 0
-    fi
-    info "Installing Infernal..."
-    conda install -y -n "$CONDA_ENV" -c bioconda infernal
-    ok "Infernal installed."
-}
-
-install_viennarna() {
-    header "ViennaRNA"
-    if run_in_env command -v RNAfold &>/dev/null; then
-        skip "ViennaRNA already installed in '$CONDA_ENV'."
-        return 0
-    fi
-    info "Installing ViennaRNA..."
-    conda install -y -n "$CONDA_ENV" -c bioconda viennarna
-    ok "ViennaRNA installed."
-}
-
-install_pymol() {
-    header "PyMOL"
-    if run_in_env command -v pymol &>/dev/null; then
-        skip "PyMOL already installed in '$CONDA_ENV'."
-        return 0
-    fi
-    info "Installing PyMOL (open-source)..."
-    conda install -y -n "$CONDA_ENV" -c conda-forge pymol-open-source
-    ok "PyMOL installed."
-}
-
-install_protenix() {
-    header "Protenix"
-    if run_in_env pip show protenix &>/dev/null; then
-        skip "Protenix already installed in '$CONDA_ENV'."
-        return 0
-    fi
-    info "Installing Protenix..."
-    run_in_env pip install protenix
-    ok "Protenix installed."
-}
-
-install_rnadvisor() {
-    header "RNAdvisor"
-    if run_in_env pip show rnadvisor &>/dev/null; then
-        skip "RNAdvisor already installed in '$CONDA_ENV'."
-        return 0
-    fi
-    info "Installing RNAdvisor..."
-    run_in_env pip install rnadvisor
-    ok "RNAdvisor installed."
-}
+# ── Data & tool installers ──────────────────────────────────────────────────
 
 install_rfam() {
     header "Rfam database"
@@ -144,7 +68,7 @@ install_rfam() {
         skip "Rfam.cm already pressed."
     else
         info "Running cmpress on Rfam.cm (this may take a few minutes)..."
-        run_in_env cmpress "$rfam_cm"
+        pixi run cmpress "$rfam_cm"
         ok "Rfam.cm pressed."
     fi
 }
@@ -166,13 +90,12 @@ install_rhofold() {
         ok "RhoFold+ cloned."
     fi
 
-    # Install into conda env
-    info "Installing RhoFold+ into '$CONDA_ENV' env..."
-    run_in_env pip install -e "$rhofold_dir" 2>/dev/null || {
-        # Fallback: some versions use setup.py
-        (cd "$rhofold_dir" && run_in_env python setup.py install) 2>/dev/null || {
+    # Install into pixi env
+    info "Installing RhoFold+ into pixi environment..."
+    pixi run pip install -e "$rhofold_dir" 2>/dev/null || {
+        (cd "$rhofold_dir" && pixi run python setup.py install) 2>/dev/null || {
             fail "Could not install RhoFold+ automatically. You may need to install it manually."
-            info "  cd $rhofold_dir && pip install -e ."
+            info "  cd $rhofold_dir && pixi run pip install -e ."
         }
     }
 
@@ -192,7 +115,7 @@ install_rhofold() {
                 }
         else
             fail "git-lfs not found. Install it to download RhoFold+ weights."
-            info "  conda install -c conda-forge git-lfs"
+            info "  pixi add git-lfs"
             info "  git lfs install"
             info "  git clone https://huggingface.co/yangjianfeng/RhoFold $weights_dir"
         fi
@@ -219,7 +142,6 @@ install_spotrna() {
     else
         info "Downloading SPOT-RNA models..."
         (cd "$spotrna_dir" && bash download_models.sh 2>/dev/null) || {
-            # Fallback: try wget
             mkdir -p "$spotrna_dir/SPOT-RNA-models"
             fail "Could not auto-download SPOT-RNA models. Run manually:"
             info "  cd $spotrna_dir && bash download_models.sh"
@@ -345,33 +267,30 @@ usage() {
     cat <<EOF
 ${BOLD}rnapipey tool installer${NC}
 
+Conda/pip packages (Infernal, ViennaRNA, PyMOL, Protenix, RNAdvisor) are
+managed by pixi. Run ${BOLD}pixi install${NC} first.
+
+This script handles data downloads and git-based tools that pixi can't manage.
+
 ${BOLD}USAGE${NC}
     ./install_tools.sh [OPTIONS]
 
 ${BOLD}OPTIONS${NC}
-    --all           Install everything (recommended)
-    --infernal      Install Infernal (conda)
-    --viennarna     Install ViennaRNA (conda)
-    --pymol         Install PyMOL (conda)
-    --protenix      Install Protenix (pip)
-    --rnadvisor     Install RNAdvisor (pip)
-    --rfam          Download Rfam database
-    --rhofold       Clone & install RhoFold+, download weights
+    --all           Download/clone everything below
+    --rfam          Download Rfam database + cmpress
+    --rhofold       Clone RhoFold+, install into pixi env, download weights
     --spotrna       Clone SPOT-RNA & download models
     --simrna        Print SimRNA manual install instructions
     --config-only   Only (re)generate configs/local.yaml
     --help          Show this help
 
 ${BOLD}EXAMPLES${NC}
-    ./install_tools.sh --all
-    ./install_tools.sh --infernal --viennarna --rfam
+    pixi install && ./install_tools.sh --all
+    ./install_tools.sh --rfam --rhofold
     ./install_tools.sh --config-only
 
 ${BOLD}ENVIRONMENT${NC}
     RNAPIPEY_HOME   Base directory for data/tools (default: \$HOME/.rnapipey)
-
-Tools are installed into the conda environment '${CONDA_ENV}'.
-Data and cloned repos go under \$RNAPIPEY_HOME.
 EOF
 }
 
@@ -382,11 +301,6 @@ main() {
     fi
 
     local do_all=false
-    local do_infernal=false
-    local do_viennarna=false
-    local do_pymol=false
-    local do_protenix=false
-    local do_rnadvisor=false
     local do_rfam=false
     local do_rhofold=false
     local do_spotrna=false
@@ -395,18 +309,13 @@ main() {
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            --all)        do_all=true ;;
-            --infernal)   do_infernal=true ;;
-            --viennarna)  do_viennarna=true ;;
-            --pymol)      do_pymol=true ;;
-            --protenix)   do_protenix=true ;;
-            --rnadvisor)  do_rnadvisor=true ;;
-            --rfam)       do_rfam=true ;;
-            --rhofold)    do_rhofold=true ;;
-            --spotrna)    do_spotrna=true ;;
-            --simrna)     do_simrna=true ;;
+            --all)         do_all=true ;;
+            --rfam)        do_rfam=true ;;
+            --rhofold)     do_rhofold=true ;;
+            --spotrna)     do_spotrna=true ;;
+            --simrna)      do_simrna=true ;;
             --config-only) do_config_only=true ;;
-            --help|-h)    usage; exit 0 ;;
+            --help|-h)     usage; exit 0 ;;
             *)
                 fail "Unknown option: $1"
                 echo "Run ./install_tools.sh --help for usage."
@@ -425,26 +334,17 @@ main() {
         exit 0
     fi
 
-    ensure_conda
-    ensure_env
-
-    if $do_all || $do_infernal;  then install_infernal;  fi
-    if $do_all || $do_viennarna; then install_viennarna; fi
-    if $do_all || $do_pymol;     then install_pymol;     fi
-    if $do_all || $do_protenix;  then install_protenix;  fi
-    if $do_all || $do_rnadvisor; then install_rnadvisor; fi
-    if $do_all || $do_rfam;      then install_rfam;      fi
-    if $do_all || $do_rhofold;   then install_rhofold;   fi
-    if $do_all || $do_spotrna;   then install_spotrna;   fi
-    if $do_all || $do_simrna;    then install_simrna;    fi
+    if $do_all || $do_rfam;    then install_rfam;    fi
+    if $do_all || $do_rhofold; then install_rhofold; fi
+    if $do_all || $do_spotrna; then install_spotrna; fi
+    if $do_all || $do_simrna;  then install_simrna;  fi
 
     generate_config
 
     header "Done"
     echo ""
     ok "Installation complete."
-    info "Activate the environment:  ${BOLD}conda activate $CONDA_ENV${NC}"
-    info "Check tool availability:   ${BOLD}rnapipey check -c configs/local.yaml${NC}"
+    info "Run your pipeline:  ${BOLD}pixi run rnapipey check -c configs/local.yaml${NC}"
     echo ""
 }
 

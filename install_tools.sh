@@ -51,13 +51,13 @@ install_rfam() {
         skip "Rfam database already downloaded."
     else
         info "Downloading Rfam.cm.gz from EBI FTP..."
-        wget -q --show-progress -O "$rfam_dir/Rfam.cm.gz" \
+        curl -fSL --progress-bar -o "$rfam_dir/Rfam.cm.gz" \
             "https://ftp.ebi.ac.uk/pub/databases/Rfam/CURRENT/Rfam.cm.gz"
         info "Extracting Rfam.cm.gz..."
         gunzip -f "$rfam_dir/Rfam.cm.gz"
 
         info "Downloading Rfam.clanin..."
-        wget -q --show-progress -O "$rfam_clanin" \
+        curl -fSL --progress-bar -o "$rfam_clanin" \
             "https://ftp.ebi.ac.uk/pub/databases/Rfam/CURRENT/Rfam.clanin"
 
         ok "Rfam database downloaded."
@@ -158,15 +158,80 @@ install_spotrna() {
 
 install_simrna() {
     header "SimRNA"
-    echo ""
-    info "${YELLOW}SimRNA requires a manual download.${NC}"
-    info "It is distributed under an academic license from genesilico.pl."
-    info ""
-    info "Steps:"
-    info "  1. Visit https://genesilico.pl/SimRNAweb/ and request a download"
-    info "  2. Extract to $TOOLS_DIR/SimRNA/"
-    info "  3. Update configs/local.yaml with the binary and data_dir paths"
-    echo ""
+    local simrna_dir="$TOOLS_DIR/SimRNA"
+
+    mkdir_p "$TOOLS_DIR"
+
+    if [[ -f "$simrna_dir/SimRNA" ]]; then
+        skip "SimRNA already installed."
+    else
+        local simrna_url
+        case "$(uname -s)" in
+            Darwin)
+                simrna_url="https://genesilico.pl/software/simrna/version_3.20/SimRNA_64bitIntel_MacOSX_staticLibs.tgz"
+                ;;
+            *)
+                simrna_url="https://genesilico.pl/software/simrna/version_3.20/SimRNA_32bitIntel_Linux.tgz"
+                ;;
+        esac
+
+        info "Downloading SimRNA from genesilico.pl ($(uname -s))..."
+        local tmp_tgz="$TOOLS_DIR/SimRNA.tgz"
+        curl -fSL --progress-bar -o "$tmp_tgz" "$simrna_url"
+
+        info "Extracting SimRNA..."
+        mkdir_p "$simrna_dir"
+        tar xzf "$tmp_tgz" -C "$simrna_dir" --strip-components=1
+        rm -f "$tmp_tgz"
+
+        if [[ -f "$simrna_dir/SimRNA" ]]; then
+            chmod +x "$simrna_dir/SimRNA"
+            ok "SimRNA installed."
+        else
+            fail "SimRNA binary not found after extraction. Check archive structure."
+        fi
+    fi
+}
+
+install_docker() {
+    header "Docker (via colima)"
+
+    if command -v docker &>/dev/null; then
+        skip "Docker CLI already installed."
+    else
+        if command -v brew &>/dev/null; then
+            info "Installing Docker CLI and Docker Compose via Homebrew..."
+            brew install docker docker-compose
+            ok "Docker CLI installed."
+        else
+            fail "Homebrew not found. Install Docker manually:"
+            info "  https://docs.docker.com/get-docker/"
+            return 1
+        fi
+    fi
+
+    if command -v colima &>/dev/null; then
+        skip "Colima already installed."
+    else
+        if command -v brew &>/dev/null; then
+            info "Installing Colima (lightweight Docker runtime for macOS)..."
+            brew install colima
+            ok "Colima installed."
+        else
+            fail "Homebrew not found. Install Colima manually:"
+            info "  brew install colima"
+            return 1
+        fi
+    fi
+
+    # Start colima if not running
+    if colima status &>/dev/null 2>&1; then
+        skip "Colima is already running."
+    else
+        info "Starting Colima..."
+        colima start --memory 4 --cpu 2
+        ok "Colima started."
+    fi
 }
 
 # ── Config generation ────────────────────────────────────────────────────────
@@ -233,7 +298,7 @@ tools:
   rhofold:
     script: "${rhofold_script}"
     model_dir: "${rhofold_model_dir}"
-    device: "cuda:0"
+    device: "cpu"
 
   # SimRNA (manual install required — academic license)
   simrna:
@@ -280,7 +345,8 @@ ${BOLD}OPTIONS${NC}
     --rfam          Download Rfam database + cmpress
     --rhofold       Clone RhoFold+, install into pixi env, download weights
     --spotrna       Clone SPOT-RNA & download models
-    --simrna        Print SimRNA manual install instructions
+    --simrna        Download SimRNA binary
+    --docker        Install Docker CLI + Colima (macOS) for RNAdvisor
     --config-only   Only (re)generate configs/local.yaml
     --help          Show this help
 
@@ -305,6 +371,7 @@ main() {
     local do_rhofold=false
     local do_spotrna=false
     local do_simrna=false
+    local do_docker=false
     local do_config_only=false
 
     while [[ $# -gt 0 ]]; do
@@ -314,6 +381,7 @@ main() {
             --rhofold)     do_rhofold=true ;;
             --spotrna)     do_spotrna=true ;;
             --simrna)      do_simrna=true ;;
+            --docker)      do_docker=true ;;
             --config-only) do_config_only=true ;;
             --help|-h)     usage; exit 0 ;;
             *)
@@ -338,6 +406,7 @@ main() {
     if $do_all || $do_rhofold; then install_rhofold; fi
     if $do_all || $do_spotrna; then install_spotrna; fi
     if $do_all || $do_simrna;  then install_simrna;  fi
+    if $do_all || $do_docker;  then install_docker;  fi
 
     generate_config
 

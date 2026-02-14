@@ -10,11 +10,15 @@ python = ">=3.10"
 infernal = "*"
 viennarna = "*"
 pymol-open-source = "*"
+pytorch-cpu = "*"
+pip = "*"
+openmm = "*"
 
 [pypi-dependencies]
 rnapipey = { path = ".", editable = true }
 protenix = "*"
 rnadvisor = "*"
+huggingface-hub = "*"
 
 [feature.dev.pypi-dependencies]
 pytest = ">=7.0"

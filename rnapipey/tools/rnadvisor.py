@@ -72,45 +72,41 @@ class RNAdvisorTool(BaseTool):
 
     def _score_single(self, pdb: Path) -> dict[str, float]:
         """Score a single PDB file with RNAdvisor."""
-        metrics_str = ",".join(self.config.metrics)
+        import csv
+        import shutil
 
-        if self.config.docker:
-            cmd = [
-                "docker", "run", "--rm",
-                "-v", f"{pdb.parent}:/data",
-                "rnadvisor/rnadvisor:latest",
-                "--pdb", f"/data/{pdb.name}",
-                "--metrics", metrics_str,
-                "--output_format", "json",
-            ]
-        else:
-            cmd = [
-                "rnadvisor",
-                "--pdb", str(pdb),
-                "--metrics", metrics_str,
-                "--output_format", "json",
-            ]
+        scores_str = ",".join(self.config.metrics)
+
+        # RNAdvisor expects --pred_dir (a directory of PDBs)
+        # Stage each PDB into its own temp dir
+        staging_dir = self.work_dir / f"_stage_{pdb.stem}"
+        staging_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(pdb, staging_dir / pdb.name)
+
+        out_csv = self.work_dir / f"scores_{pdb.stem}.csv"
+
+        cmd = [
+            "rnadvisor",
+            "--pred_dir", str(staging_dir),
+            "--scores", scores_str,
+            "--out_path", str(out_csv),
+        ]
 
         result = self._run_cmd(cmd)
         if result.returncode != 0:
             logger.warning("RNAdvisor failed for %s: %s", pdb.name, result.stderr[:200])
             return {}
 
-        # Parse JSON output
+        # Parse CSV output
         try:
-            data = json.loads(result.stdout)
-            if isinstance(data, list) and data:
-                return data[0]
-            if isinstance(data, dict):
-                return data
-        except json.JSONDecodeError:
-            # Try to find JSON output file instead
-            json_outputs = list(self.work_dir.glob("*scores*.json"))
-            for jf in json_outputs:
-                try:
-                    return json.loads(jf.read_text())
-                except (json.JSONDecodeError, OSError):
-                    continue
+            if out_csv.exists():
+                with open(out_csv) as f:
+                    reader = csv.DictReader(f)
+                    for row in reader:
+                        return {k: float(v) for k, v in row.items()
+                                if k not in ("", "name", "pdb", "file") and v}
+        except (ValueError, OSError) as e:
+            logger.warning("Could not parse RNAdvisor output for %s: %s", pdb.name, e)
         return {}
 
     def _consensus_rank(

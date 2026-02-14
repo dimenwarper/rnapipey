@@ -33,7 +33,7 @@ class RhoFoldTool(BaseTool):
             "python", self.config.script,
             "--input_fas", str(fasta_path),
             "--output_dir", str(self.work_dir),
-            "--single_seq_pred",  # always enable single-seq mode as fallback
+            "--single_seq_pred", "True",  # always enable single-seq mode as fallback
         ]
         if self.config.model_dir:
             cmd.extend(["--ckpt", str(self.config.model_dir)])

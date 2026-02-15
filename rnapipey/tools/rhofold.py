@@ -92,3 +92,80 @@ class RhoFoldTool(BaseTool):
             metrics=metrics,
             runtime_seconds=result.runtime_seconds,
         )
+
+    def run_batch(self, **kwargs: Any) -> ToolResult:
+        """Run RhoFold+ batch inference: load model once, loop over seeds."""
+        fasta_path: Path = kwargs["fasta_path"]
+        seeds: list[int] = kwargs["seeds"]
+        output_base_dir: Path = kwargs["output_base_dir"]
+        msa_path: Path | None = kwargs.get("msa_path")
+        device: str | None = kwargs.get("device")
+
+        batch_script = Path(__file__).parent / "rhofold_batch.py"
+
+        cmd = [
+            "python", str(batch_script),
+            "--input_fas", str(fasta_path),
+            "--seeds", ",".join(str(s) for s in seeds),
+            "--output_base_dir", str(output_base_dir),
+            "--single_seq_pred", "True",
+        ]
+        if self.config.model_dir:
+            cmd.extend(["--ckpt", str(self.config.model_dir)])
+
+        effective_device = device if device else self.config.device
+        if effective_device:
+            cmd.extend(["--device", effective_device])
+
+        if msa_path and msa_path.exists():
+            cmd.extend(["--input_a3m", str(msa_path)])
+
+        result = self._run_cmd(cmd, work_dir=output_base_dir)
+        if result.returncode != 0:
+            return ToolResult(
+                success=False,
+                error_message=f"RhoFold+ batch failed: {result.stderr[:300]}",
+                runtime_seconds=result.runtime_seconds,
+            )
+
+        # Collect outputs from all run_<seed>/ directories
+        all_pdbs: list[Path] = []
+        all_metrics: list[dict[str, Any]] = []
+
+        for seed in seeds:
+            run_dir = output_base_dir / f"run_{seed}"
+            pdb_files = list(run_dir.glob("*.pdb"))
+            if pdb_files:
+                all_pdbs.extend(pdb_files)
+
+            npz_files = list(run_dir.glob("*.npz"))
+            if npz_files:
+                try:
+                    import numpy as np
+                    data = np.load(npz_files[0])
+                    if "plddt" in data:
+                        all_metrics.append({
+                            "plddt_mean": float(np.mean(data["plddt"])),
+                        })
+                except Exception:
+                    logger.debug("Could not extract pLDDT from %s", npz_files[0])
+
+        if not all_pdbs:
+            return ToolResult(
+                success=False,
+                error_message="RhoFold+ batch produced no PDB files",
+                runtime_seconds=result.runtime_seconds,
+            )
+
+        merged_metrics: dict[str, Any] = {}
+        plddt_values = [m["plddt_mean"] for m in all_metrics if "plddt_mean" in m]
+        if plddt_values:
+            merged_metrics["plddt_mean"] = float(sum(plddt_values) / len(plddt_values))
+            merged_metrics["plddt_per_run"] = plddt_values
+
+        return ToolResult(
+            success=True,
+            output_files={"pdb": all_pdbs[0], "all_pdbs": all_pdbs},
+            metrics=merged_metrics,
+            runtime_seconds=result.runtime_seconds,
+        )

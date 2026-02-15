@@ -285,93 +285,106 @@ class Pipeline:
         nstruct: int,
         devices: list[str] | None = None,
     ) -> ToolResult:
-        """Run RhoFold+ multiple times with different seeds, parallelised across GPUs."""
+        """Run RhoFold+ ensemble using batch inference (load model once per GPU)."""
         devices = devices or []
+        rhofold_dir = ensure_dir(pred_dir / "rhofold")
+        all_seeds = list(range(nstruct))
 
-        def _run_single(seed: int, device: str) -> tuple[int, ToolResult]:
-            run_dir = ensure_dir(pred_dir / "rhofold" / f"run_{seed}")
-            tool = RhoFoldTool(tool_config, run_dir, self.logs_dir)
-
-            if not tool.check():
-                return seed, ToolResult(
-                    success=False, error_message="RhoFold+ not available",
-                )
-
-            gpu_info = f" on {device}" if device else ""
-            logger.info(
-                "Running RhoFold+ (seed %d, %d/%d)%s...",
-                seed, seed + 1, nstruct, gpu_info,
+        # Availability check
+        check_tool = RhoFoldTool(tool_config, rhofold_dir, self.logs_dir)
+        if not check_tool.check():
+            return ToolResult(
+                success=False, error_message="RhoFold+ not available",
             )
+
+        n_gpus = max(len(devices), 1)
+
+        if n_gpus <= 1:
+            # Single GPU (or CPU): one batch call with all seeds
+            logger.info(
+                "Stage 3: Running RhoFold+ batch ensemble (%d structures, 1 model load)...",
+                nstruct,
+            )
+            tool = RhoFoldTool(tool_config, rhofold_dir, self.logs_dir)
             kwargs: dict[str, Any] = {
                 "fasta_path": fasta_path,
-                "seed": seed,
+                "seeds": all_seeds,
+                "output_base_dir": rhofold_dir,
             }
             if msa_path:
                 kwargs["msa_path"] = msa_path
-            if device:
-                kwargs["device"] = device
+            if devices:
+                kwargs["device"] = devices[0]
+            return tool.run_batch(**kwargs)
 
-            return seed, tool.run(**kwargs)
+        # Multi-GPU: split seeds round-robin, one batch per GPU in parallel
+        seed_groups: list[list[int]] = [[] for _ in range(n_gpus)]
+        for i, seed in enumerate(all_seeds):
+            seed_groups[i % n_gpus].append(seed)
 
-        # Assign devices round-robin
-        n_workers = max(len(devices), 1)
-        tasks = [
-            (i, devices[i % len(devices)] if devices else "")
-            for i in range(nstruct)
-        ]
+        logger.info(
+            "Stage 3: Running RhoFold+ batch ensemble (%d structures across %d GPUs, %d model loads)...",
+            nstruct, n_gpus, n_gpus,
+        )
 
-        all_pdbs: list[Path] = []
-        all_metrics: list[dict] = []
-        total_time = 0.0
-        run_results: dict[int, ToolResult] = {}
-
-        if n_workers > 1:
+        def _run_gpu_batch(gpu_idx: int, seeds: list[int]) -> ToolResult:
+            device = devices[gpu_idx]
+            gpu_dir = ensure_dir(rhofold_dir / f"gpu_{gpu_idx}")
+            tool = RhoFoldTool(tool_config, gpu_dir, self.logs_dir)
             logger.info(
-                "Stage 3: Running RhoFold+ ensemble (%d structures across %d GPUs)...",
-                nstruct, n_workers,
+                "Running RhoFold+ batch (seeds %s) on %s...", seeds, device,
             )
-            with ThreadPoolExecutor(max_workers=n_workers) as executor:
-                futures = {
-                    executor.submit(_run_single, seed, dev): seed
-                    for seed, dev in tasks
-                }
-                for future in as_completed(futures):
-                    seed, result = future.result()
-                    run_results[seed] = result
-        else:
-            logger.info("Stage 3: Running RhoFold+ ensemble (%d structures)...", nstruct)
-            for seed, dev in tasks:
-                _, result = _run_single(seed, dev)
-                run_results[seed] = result
+            kw: dict[str, Any] = {
+                "fasta_path": fasta_path,
+                "seeds": seeds,
+                "output_base_dir": gpu_dir,
+                "device": device,
+            }
+            if msa_path:
+                kw["msa_path"] = msa_path
+            return tool.run_batch(**kw)
 
-        # Collect results in seed order
-        for seed in sorted(run_results):
-            result = run_results[seed]
-            total_time += result.runtime_seconds
+        gpu_results: list[ToolResult] = []
+        with ThreadPoolExecutor(max_workers=n_gpus) as executor:
+            futures = {
+                executor.submit(_run_gpu_batch, idx, grp): idx
+                for idx, grp in enumerate(seed_groups)
+                if grp
+            }
+            for future in as_completed(futures):
+                gpu_results.append(future.result())
 
-            if result.success:
-                run_pdbs = result.output_files.get("all_pdbs", [])
-                if run_pdbs:
-                    all_pdbs.extend(run_pdbs)
-                elif result.output_files.get("pdb"):
-                    all_pdbs.append(result.output_files["pdb"])
-                all_metrics.append(result.metrics)
+        # Merge results from all GPUs
+        all_pdbs: list[Path] = []
+        total_time = 0.0
+        any_success = False
+        all_plddt: list[float] = []
+
+        for r in gpu_results:
+            total_time += r.runtime_seconds
+            if r.success:
+                any_success = True
+                pdbs = r.output_files.get("all_pdbs", [])
+                if pdbs:
+                    all_pdbs.extend(pdbs)
+                elif r.output_files.get("pdb"):
+                    all_pdbs.append(r.output_files["pdb"])
+                per_run = r.metrics.get("plddt_per_run", [])
+                all_plddt.extend(per_run)
             else:
-                logger.warning("RhoFold+ run %d failed: %s", seed, result.error_message)
+                logger.warning("RhoFold+ GPU batch failed: %s", r.error_message)
 
-        if not all_pdbs:
+        if not any_success:
             return ToolResult(
                 success=False,
-                error_message="All RhoFold+ runs failed",
+                error_message="All RhoFold+ GPU batches failed",
                 runtime_seconds=total_time,
             )
 
-        # Aggregate metrics
         merged_metrics: dict[str, Any] = {}
-        plddt_values = [m["plddt_mean"] for m in all_metrics if "plddt_mean" in m]
-        if plddt_values:
-            merged_metrics["plddt_mean"] = float(sum(plddt_values) / len(plddt_values))
-            merged_metrics["plddt_per_run"] = plddt_values
+        if all_plddt:
+            merged_metrics["plddt_mean"] = float(sum(all_plddt) / len(all_plddt))
+            merged_metrics["plddt_per_run"] = all_plddt
 
         return ToolResult(
             success=True,

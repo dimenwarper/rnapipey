@@ -26,7 +26,7 @@ class SimRNAConfig:
     binary: str = ""
     data_dir: str = ""
     replicas: int = 10
-    steps: int = 10_000_000
+    steps: int = 1_000_000
     clustering_top_n: int = 5
 
 

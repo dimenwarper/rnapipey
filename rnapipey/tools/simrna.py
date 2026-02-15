@@ -62,8 +62,6 @@ class SimRNATool(BaseTool):
             "-n", str(self.config.steps),
             "-R", str(replicas),
         ]
-        if self.config.data_dir:
-            cmd.extend(["-E", str(self.config.data_dir)])
         if restraints_file:
             cmd.extend(["-r", str(restraints_file)])
 

@@ -49,12 +49,14 @@ class ProtenixTool(BaseTool):
         if self.config.model:
             cmd.extend(["-n", str(self.config.model)])
 
-        # Set CUDA_VISIBLE_DEVICES to pin this invocation to a specific GPU
-        env: dict[str, str] | None = None
+        # Set PROTENIX_ROOT_DIR for CCD data and CUDA_VISIBLE_DEVICES for GPU
+        env: dict[str, str] = {}
+        data_dir = str(Path(self.config.data_dir).expanduser())
+        env["PROTENIX_ROOT_DIR"] = data_dir
         if device:
             # Extract GPU index from device string (e.g. "cuda:2" -> "2")
             gpu_id = device.split(":")[-1] if ":" in device else device
-            env = {"CUDA_VISIBLE_DEVICES": gpu_id}
+            env["CUDA_VISIBLE_DEVICES"] = gpu_id
 
         result = self._run_cmd(cmd, timeout=86400, env=env)
         if result.returncode != 0:

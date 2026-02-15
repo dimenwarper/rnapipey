@@ -34,6 +34,7 @@ class SimRNAConfig:
 class ProtenixConfig:
     binary: str = "protenix"
     model: str = ""
+    data_dir: str = "~/.protenix"
 
 
 @dataclass

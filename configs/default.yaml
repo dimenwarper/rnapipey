@@ -33,6 +33,7 @@ tools:
   protenix:
     binary: protenix
     model: ""          # model path or empty for default
+    data_dir: "~/.protenix"  # CCD data dir (run: download_protenix_data.sh --inference_only)
 
   # RNAdvisor 2
   rnadvisor:

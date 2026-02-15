@@ -28,6 +28,7 @@ class ProtenixTool(BaseTool):
         fasta_path: Path = kwargs["fasta_path"]
         msa_path: Path | None = kwargs.get("msa_path")
         seeds: list[int] = kwargs.get("seeds", [42])
+        device: str | None = kwargs.get("device")
 
         records = read_fasta(fasta_path)
         if not records:
@@ -48,7 +49,14 @@ class ProtenixTool(BaseTool):
         if self.config.model:
             cmd.extend(["-n", str(self.config.model)])
 
-        result = self._run_cmd(cmd, timeout=86400)
+        # Set CUDA_VISIBLE_DEVICES to pin this invocation to a specific GPU
+        env: dict[str, str] | None = None
+        if device:
+            # Extract GPU index from device string (e.g. "cuda:2" -> "2")
+            gpu_id = device.split(":")[-1] if ":" in device else device
+            env = {"CUDA_VISIBLE_DEVICES": gpu_id}
+
+        result = self._run_cmd(cmd, timeout=86400, env=env)
         if result.returncode != 0:
             return ToolResult(
                 success=False,

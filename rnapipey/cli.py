@@ -71,7 +71,7 @@ def run(
         1, "--nstruct", "-n", help="Structures per predictor."
     ),
     device: str = typer.Option(
-        "", "--device", help="Compute device (e.g. cuda:0)."
+        "", "--device", help="Compute device(s), comma-separated (e.g. cuda:0,cuda:1,cuda:2,cuda:3)."
     ),
     # Misc
     verbose: bool = typer.Option(False, "-v", "--verbose", help="Verbose logging."),
@@ -107,8 +107,10 @@ def run(
     console.print(f"  Predictors: {', '.join(predictors) if predictors else 'none'}")
     if nstruct > 1:
         console.print(f"  Ensemble:   {nstruct} structures per predictor")
-    if device:
-        console.print(f"  Device:     {device}")
+    # Parse comma-separated devices into a list
+    devices: list[str] = [d.strip() for d in device.split(",") if d.strip()] if device else []
+    if devices:
+        console.print(f"  Device:     {', '.join(devices)}")
     console.print()
 
     pipeline = Pipeline(cfg, output_dir.resolve())
@@ -119,7 +121,7 @@ def run(
         run_spotrna=spotrna,
         skip_scoring=skip_scoring,
         nstruct=nstruct,
-        device=device,
+        devices=devices,
     )
     console.print(f"\n[green]Done![/green] Results in: {output_dir}")
 

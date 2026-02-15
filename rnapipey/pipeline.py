@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import shutil
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
 
@@ -51,7 +52,7 @@ class Pipeline:
         run_spotrna: bool = False,
         skip_scoring: bool = False,
         nstruct: int = 1,
-        device: str = "",
+        devices: list[str] | None = None,
     ) -> None:
         """Run the full pipeline."""
         # Copy input
@@ -81,7 +82,7 @@ class Pipeline:
         # Stage 3: 3D Prediction
         predictor_results = self._run_stage3(
             query_fasta, predictors, msa_path, dot_bracket,
-            nstruct=nstruct, device=device,
+            nstruct=nstruct, devices=devices or [],
         )
 
         # Stage 3b: Ensemble clustering (when nstruct > 1)
@@ -200,9 +201,10 @@ class Pipeline:
         msa_path: Path | None,
         secondary_structure: str,
         nstruct: int = 1,
-        device: str = "",
+        devices: list[str] | None = None,
     ) -> dict[str, ToolResult]:
         """Stage 3: 3D structure prediction with selected methods."""
+        devices = devices or []
         results: dict[str, ToolResult] = {}
         pred_dir = ensure_dir(self.output_dir / "03_3d_prediction")
 
@@ -230,12 +232,12 @@ class Pipeline:
             if pred_name == "rhofold" and nstruct > 1:
                 result = self._run_rhofold_ensemble(
                     fasta_path, msa_path, tool_config, pred_dir,
-                    nstruct=nstruct, device=device,
+                    nstruct=nstruct, devices=devices,
                 )
             elif pred_name == "protenix":
                 result = self._run_protenix(
                     fasta_path, msa_path, tool_config, pred_dir,
-                    nstruct=nstruct,
+                    nstruct=nstruct, devices=devices,
                 )
             elif pred_name == "simrna":
                 result = self._run_simrna(
@@ -255,8 +257,8 @@ class Pipeline:
                 kwargs: dict[str, Any] = {"fasta_path": fasta_path}
                 if pred_name in ("rhofold", "protenix") and msa_path:
                     kwargs["msa_path"] = msa_path
-                if device:
-                    kwargs["device"] = device
+                if devices:
+                    kwargs["device"] = devices[0]
                 result = tool.run(**kwargs)
 
             results[pred_name] = result
@@ -281,32 +283,70 @@ class Pipeline:
         tool_config: Any,
         pred_dir: Path,
         nstruct: int,
-        device: str,
+        devices: list[str] | None = None,
     ) -> ToolResult:
-        """Run RhoFold+ multiple times with different seeds."""
-        all_pdbs: list[Path] = []
-        all_metrics: list[dict] = []
-        total_time = 0.0
+        """Run RhoFold+ multiple times with different seeds, parallelised across GPUs."""
+        devices = devices or []
 
-        for i in range(nstruct):
-            run_dir = ensure_dir(pred_dir / "rhofold" / f"run_{i}")
+        def _run_single(seed: int, device: str) -> tuple[int, ToolResult]:
+            run_dir = ensure_dir(pred_dir / "rhofold" / f"run_{seed}")
             tool = RhoFoldTool(tool_config, run_dir, self.logs_dir)
 
             if not tool.check():
-                logger.warning("RhoFold+ not available, skipping")
-                return ToolResult(success=False, error_message="RhoFold+ not available")
+                return seed, ToolResult(
+                    success=False, error_message="RhoFold+ not available",
+                )
 
-            logger.info("Stage 3: Running RhoFold+ (seed %d, %d/%d)...", i, i + 1, nstruct)
+            gpu_info = f" on {device}" if device else ""
+            logger.info(
+                "Running RhoFold+ (seed %d, %d/%d)%s...",
+                seed, seed + 1, nstruct, gpu_info,
+            )
             kwargs: dict[str, Any] = {
                 "fasta_path": fasta_path,
-                "seed": i,
+                "seed": seed,
             }
             if msa_path:
                 kwargs["msa_path"] = msa_path
             if device:
                 kwargs["device"] = device
 
-            result = tool.run(**kwargs)
+            return seed, tool.run(**kwargs)
+
+        # Assign devices round-robin
+        n_workers = max(len(devices), 1)
+        tasks = [
+            (i, devices[i % len(devices)] if devices else "")
+            for i in range(nstruct)
+        ]
+
+        all_pdbs: list[Path] = []
+        all_metrics: list[dict] = []
+        total_time = 0.0
+        run_results: dict[int, ToolResult] = {}
+
+        if n_workers > 1:
+            logger.info(
+                "Stage 3: Running RhoFold+ ensemble (%d structures across %d GPUs)...",
+                nstruct, n_workers,
+            )
+            with ThreadPoolExecutor(max_workers=n_workers) as executor:
+                futures = {
+                    executor.submit(_run_single, seed, dev): seed
+                    for seed, dev in tasks
+                }
+                for future in as_completed(futures):
+                    seed, result = future.result()
+                    run_results[seed] = result
+        else:
+            logger.info("Stage 3: Running RhoFold+ ensemble (%d structures)...", nstruct)
+            for seed, dev in tasks:
+                _, result = _run_single(seed, dev)
+                run_results[seed] = result
+
+        # Collect results in seed order
+        for seed in sorted(run_results):
+            result = run_results[seed]
             total_time += result.runtime_seconds
 
             if result.success:
@@ -317,7 +357,7 @@ class Pipeline:
                     all_pdbs.append(result.output_files["pdb"])
                 all_metrics.append(result.metrics)
             else:
-                logger.warning("RhoFold+ run %d failed: %s", i, result.error_message)
+                logger.warning("RhoFold+ run %d failed: %s", seed, result.error_message)
 
         if not all_pdbs:
             return ToolResult(
@@ -347,26 +387,107 @@ class Pipeline:
         tool_config: Any,
         pred_dir: Path,
         nstruct: int,
+        devices: list[str] | None = None,
     ) -> ToolResult:
-        """Run Protenix with multiple seeds in a single invocation."""
-        work_dir = ensure_dir(pred_dir / "protenix")
-        tool = ProtenixTool(tool_config, work_dir, self.logs_dir)
-
-        if not tool.check():
-            logger.warning("Protenix not available, skipping")
-            return ToolResult(success=False, error_message="Protenix not available")
-
+        """Run Protenix with multiple seeds, parallelised across GPUs."""
+        devices = devices or []
         seeds = list(range(42, 42 + nstruct))
-        logger.info("Stage 3: Running Protenix (seeds %s)...", seeds)
 
-        kwargs: dict[str, Any] = {
-            "fasta_path": fasta_path,
-            "seeds": seeds,
-        }
-        if msa_path:
-            kwargs["msa_path"] = msa_path
+        # Single device (or no device): one invocation with all seeds
+        if len(devices) <= 1:
+            work_dir = ensure_dir(pred_dir / "protenix")
+            tool = ProtenixTool(tool_config, work_dir, self.logs_dir)
 
-        return tool.run(**kwargs)
+            if not tool.check():
+                logger.warning("Protenix not available, skipping")
+                return ToolResult(success=False, error_message="Protenix not available")
+
+            logger.info("Stage 3: Running Protenix (seeds %s)...", seeds)
+            kwargs: dict[str, Any] = {
+                "fasta_path": fasta_path,
+                "seeds": seeds,
+            }
+            if msa_path:
+                kwargs["msa_path"] = msa_path
+            if devices:
+                kwargs["device"] = devices[0]
+            return tool.run(**kwargs)
+
+        # Multiple devices: split seeds across GPUs, run in parallel
+        n_gpus = len(devices)
+        seed_groups: list[list[int]] = [[] for _ in range(n_gpus)]
+        for i, seed in enumerate(seeds):
+            seed_groups[i % n_gpus].append(seed)
+
+        logger.info(
+            "Stage 3: Running Protenix (%d seeds across %d GPUs)...",
+            len(seeds), n_gpus,
+        )
+
+        def _run_group(gpu_idx: int, group_seeds: list[int]) -> ToolResult:
+            device = devices[gpu_idx]
+            work_dir = ensure_dir(pred_dir / "protenix" / f"gpu_{gpu_idx}")
+            tool = ProtenixTool(tool_config, work_dir, self.logs_dir)
+            if not tool.check():
+                return ToolResult(
+                    success=False,
+                    error_message="Protenix not available",
+                )
+            logger.info(
+                "Running Protenix (seeds %s) on %s...", group_seeds, device,
+            )
+            kw: dict[str, Any] = {
+                "fasta_path": fasta_path,
+                "seeds": group_seeds,
+                "device": device,
+            }
+            if msa_path:
+                kw["msa_path"] = msa_path
+            return tool.run(**kw)
+
+        group_results: list[ToolResult] = []
+        with ThreadPoolExecutor(max_workers=n_gpus) as executor:
+            futures = {
+                executor.submit(_run_group, idx, grp): idx
+                for idx, grp in enumerate(seed_groups)
+                if grp  # skip empty groups
+            }
+            for future in as_completed(futures):
+                group_results.append(future.result())
+
+        # Merge results from all GPU groups
+        all_structures: list[Path] = []
+        merged_metrics: dict[str, Any] = {}
+        total_time = 0.0
+        any_success = False
+
+        for r in group_results:
+            total_time += r.runtime_seconds
+            if r.success:
+                any_success = True
+                pdbs = r.output_files.get("all_pdbs", [])
+                if pdbs:
+                    all_structures.extend(pdbs)
+                elif r.output_files.get("pdb"):
+                    all_structures.append(r.output_files["pdb"])
+                merged_metrics.update(r.metrics)
+
+        if not any_success:
+            return ToolResult(
+                success=False,
+                error_message="All Protenix GPU runs failed",
+                runtime_seconds=total_time,
+            )
+
+        return ToolResult(
+            success=True,
+            output_files={
+                "pdb": all_structures[0] if all_structures else None,
+                "all_pdbs": all_structures,
+            },
+            metrics=merged_metrics,
+            runtime_seconds=total_time,
+        )
 
     def _run_simrna(
         self,

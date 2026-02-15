@@ -128,8 +128,14 @@ class SimRNATool(BaseTool):
             return pdb_files
 
         trafl = trafl_files[0]
-        # Check if SimRNA_trafl2pdbs is available
-        trafl2pdbs = which("SimRNA_trafl2pdbs")
+        # Check if SimRNA_trafl2pdbs is available (next to binary or on PATH)
+        trafl2pdbs = None
+        if self.config.binary:
+            candidate = Path(self.config.binary).parent / "SimRNA_trafl2pdbs"
+            if candidate.exists():
+                trafl2pdbs = str(candidate)
+        if not trafl2pdbs:
+            trafl2pdbs = which("SimRNA_trafl2pdbs")
         if trafl2pdbs:
             # Use the official clustering tool
             result = self._run_cmd([

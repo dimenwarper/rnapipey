@@ -37,10 +37,11 @@ class SimRNATool(BaseTool):
 
         seq = records[0].sequence
 
-        # Write SimRNA input file: sequence on first line, secondary structure on second
+        # Write SimRNA input file: sequence only (one line).
+        # Secondary structure is passed via restraints, NOT in the sequence file
+        # (a second line would be interpreted as a second chain).
         input_file = self.work_dir / "input.seq"
-        ss = secondary_structure if secondary_structure else "." * len(seq)
-        input_file.write_text(f"{seq}\n{ss}\n")
+        input_file.write_text(f"{seq}\n")
 
         # Write restraints file from secondary structure
         restraints_file = None

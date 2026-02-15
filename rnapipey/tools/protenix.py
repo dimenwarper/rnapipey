@@ -92,17 +92,19 @@ class ProtenixTool(BaseTool):
 
     def _build_input_json(
         self, sequence: str, name: str, seeds: list[int] | None = None
-    ) -> dict:
+    ) -> list[dict]:
         """Build Protenix inference input JSON for a single RNA chain."""
-        return {
-            "name": f"rnapipey_{name}",
-            "modelSeeds": seeds or [42],
-            "sequences": [
-                {
-                    "rnaSequence": {
-                        "sequence": sequence,
-                        "count": 1,
+        return [
+            {
+                "name": f"rnapipey_{name}",
+                "modelSeeds": seeds or [42],
+                "sequences": [
+                    {
+                        "rnaSequence": {
+                            "sequence": sequence,
+                            "count": 1,
+                        }
                     }
-                }
-            ],
-        }
+                ],
+            }
+        ]

@@ -63,7 +63,7 @@ def main() -> None:
     parser.add_argument("--mc_dropout", action="store_true",
                         help="Re-enable dropout at inference for MC Dropout diversity")
     parser.add_argument("--noise_scale", type=float, default=0.0,
-                        help="Gaussian noise scale to add to input tokens (0 = off)")
+                        help="Gaussian noise scale to add to post-embedding features (0 = off)")
 
     args = parser.parse_args()
 
@@ -122,10 +122,29 @@ def main() -> None:
 
     data_dict = get_features(args.input_fas, input_a3m)
 
+    # ---- Embedding noise hook ----
+    # Noise must be added AFTER nn.Embedding (which requires integer tokens),
+    # so we use a forward hook on the MSA embedder to perturb its output.
+    noise_scale = args.noise_scale
+    _noise_active = False  # mutable flag toggled per seed
+
+    def _embedding_noise_hook(module, input, output):
+        """Add Gaussian noise to (msa_fea, pair_fea) after embedding."""
+        if not _noise_active:
+            return output
+        msa_fea, pair_fea = output
+        msa_fea = msa_fea + torch.randn_like(msa_fea) * noise_scale
+        pair_fea = pair_fea + torch.randn_like(pair_fea) * noise_scale
+        return msa_fea, pair_fea
+
+    hook_handle = None
+    if noise_scale > 0:
+        hook_handle = model.msa_embedder.register_forward_hook(_embedding_noise_hook)
+        logger.info("Registered embedding noise hook (scale=%.4f)", noise_scale)
+
     # ---- Loop over seeds ----
     n_seeds = len(seeds)
     use_mc_dropout = args.mc_dropout
-    noise_scale = args.noise_scale
 
     for i, seed in enumerate(seeds):
         os.environ["PYTHONHASHSEED"] = str(seed)
@@ -145,19 +164,19 @@ def main() -> None:
                 for module in model.modules():
                     if isinstance(module, nn.Dropout):
                         module.eval()
+            _noise_active = False
         else:
             logger.info("Seed %d (%d/%d) — output: %s", seed, i + 1, n_seeds, run_dir)
-
-        # Prepare tokens (optionally add noise for non-vanilla runs)
-        tokens = data_dict["tokens"].to(device)
-        if not is_first_seed and noise_scale > 0:
-            torch.manual_seed(seed)
-            tokens = tokens.float() + torch.randn_like(tokens.float()) * noise_scale
-            logger.info("Added Gaussian noise (scale=%.4f) to input tokens", noise_scale)
+            if not is_first_seed and noise_scale > 0:
+                torch.manual_seed(seed)
+                _noise_active = True
+                logger.info("Embedding noise active (scale=%.4f, seed=%d)", noise_scale, seed)
+            else:
+                _noise_active = False
 
         with timing(f"Seed {seed} inference", logger=logger):
             outputs = model(
-                tokens=tokens,
+                tokens=data_dict["tokens"].to(device),
                 rna_fm_tokens=data_dict["rna_fm_tokens"].to(device),
                 seq=data_dict["seq"],
             )
@@ -196,6 +215,9 @@ def main() -> None:
         )
 
         logger.info("Seed %d (%d/%d) done", seed, i + 1, n_seeds)
+
+    if hook_handle is not None:
+        hook_handle.remove()
 
     logger.info("Batch inference complete: %d seeds processed", n_seeds)
 

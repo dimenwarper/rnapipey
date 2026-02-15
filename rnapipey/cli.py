@@ -76,7 +76,7 @@ def run(
     ),
     noise_scale: float = typer.Option(
         0.0, "--noise-scale",
-        help="Gaussian noise scale for RhoFold+ input tokens (0 = off, seed 0 stays vanilla).",
+        help="Gaussian noise scale for RhoFold+ embeddings (0 = off, seed 0 stays vanilla).",
     ),
     device: str = typer.Option(
         "", "--device", help="Compute device(s), comma-separated (e.g. cuda:0,cuda:1,cuda:2,cuda:3)."

@@ -104,7 +104,7 @@ RhoFold+ is fully deterministic — different seeds alone produce identical stru
 pixi run rnapipey run input.fasta -o results/ -c configs/local.yaml \
   --rhofold --nstruct 10 --mc-dropout
 
-# Input noise only (adds Gaussian noise to input embeddings)
+# Input noise only (adds Gaussian noise to post-embedding features)
 pixi run rnapipey run input.fasta -o results/ -c configs/local.yaml \
   --rhofold --nstruct 10 --noise-scale 0.1
 

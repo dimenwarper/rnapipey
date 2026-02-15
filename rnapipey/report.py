@@ -192,6 +192,15 @@ def _append_ensemble_section(lines: list[str], ensemble_result: Any) -> None:
         lines.append("")
 
 
+def _relpath(pdb: Path, vis_dir: Path) -> str:
+    """Return a relative path from the vis_dir to the PDB file."""
+    try:
+        return str(pdb.resolve().relative_to(vis_dir.resolve().parent))
+    except ValueError:
+        # Different drive / can't relativize — fall back to absolute
+        return str(pdb)
+
+
 def generate_pymol_scripts(
     vis_dir: Path,
     predictor_results: dict[str, ToolResult],
@@ -199,7 +208,7 @@ def generate_pymol_scripts(
     ensemble_result: Any = None,
 ) -> None:
     """Generate PyMOL .pml scripts for visualization."""
-    # Collect all PDB paths
+    # Collect all PDB paths (representative per predictor)
     pdbs: list[tuple[str, Path]] = []
     for name, result in predictor_results.items():
         if result.success:
@@ -216,6 +225,7 @@ def generate_pymol_scripts(
     # view_all.pml: load all models, align, color by predictor
     all_lines = [
         "# rnapipey: Load and compare all predicted models",
+        "# Run from the output directory: pymol 05_visualization/view_all.pml",
         "bg_color white",
         "set cartoon_ring_mode, 3",
         "set cartoon_nucleic_acid_mode, 4",
@@ -223,7 +233,8 @@ def generate_pymol_scripts(
     ]
     for i, (name, pdb) in enumerate(pdbs):
         color = colors[i % len(colors)]
-        all_lines.append(f"load {pdb}, {name}")
+        rel = _relpath(pdb, vis_dir)
+        all_lines.append(f"load {rel}, {name}")
         all_lines.append(f"color {color}, {name}")
         all_lines.append(f"show cartoon, {name}")
         all_lines.append("")
@@ -258,13 +269,15 @@ def generate_pymol_scripts(
     if not best_pdb:
         best_pdb = pdbs[0][1]
 
+    best_rel = _relpath(best_pdb, vis_dir)
     best_lines = [
         "# rnapipey: View best predicted model",
+        "# Run from the output directory: pymol 05_visualization/view_best.pml",
         "bg_color white",
         "set cartoon_ring_mode, 3",
         "set cartoon_nucleic_acid_mode, 4",
         "",
-        f"load {best_pdb}, best_model",
+        f"load {best_rel}, best_model",
         "show cartoon, best_model",
         "color marine, best_model",
         "",
@@ -292,11 +305,11 @@ def _generate_cluster_pymol(vis_dir: Path, ensemble_result: Any) -> None:
         "marine", "red", "forest", "orange", "purple", "cyan",
         "yellow", "salmon", "lime", "slate",
     ]
-    rep_color = "white"
 
     lines = [
         "# rnapipey: Ensemble cluster visualization",
         "# Structures colored by cluster, representatives highlighted",
+        "# Run from the output directory: pymol 05_visualization/view_clusters.pml",
         "bg_color white",
         "set cartoon_ring_mode, 3",
         "set cartoon_nucleic_acid_mode, 4",
@@ -304,6 +317,7 @@ def _generate_cluster_pymol(vis_dir: Path, ensemble_result: Any) -> None:
     ]
 
     loaded: list[str] = []
+    used_names: dict[str, int] = {}
     ref_name = None
 
     for cluster in ensemble_result.clusters:
@@ -312,19 +326,29 @@ def _generate_cluster_pymol(vis_dir: Path, ensemble_result: Any) -> None:
         for member in cluster.members:
             if not member.exists():
                 continue
-            obj_name = f"c{cluster.cluster_id}_{member.stem}"
-            lines.append(f"load {member}, {obj_name}")
-            lines.append(f"color {color}, {obj_name}")
-            lines.append(f"show cartoon, {obj_name}")
+
+            # Ensure unique object names by including parent dir
+            base = f"c{cluster.cluster_id}_{member.parent.name}_{member.stem}"
+            # Deduplicate if still colliding
+            if base in used_names:
+                used_names[base] += 1
+                base = f"{base}_{used_names[base]}"
+            else:
+                used_names[base] = 0
+
+            rel = _relpath(member, vis_dir)
+            lines.append(f"load {rel}, {base}")
+            lines.append(f"color {color}, {base}")
+            lines.append(f"show cartoon, {base}")
 
             # Highlight representative with thicker cartoon
             if member == cluster.representative:
-                lines.append(f"set cartoon_tube_radius, 0.4, {obj_name}")
+                lines.append(f"set cartoon_tube_radius, 0.4, {base}")
                 lines.append(f"# Representative of cluster {cluster.cluster_id}")
 
-            loaded.append(obj_name)
+            loaded.append(base)
             if ref_name is None:
-                ref_name = obj_name
+                ref_name = base
             lines.append("")
 
     # Align all to first

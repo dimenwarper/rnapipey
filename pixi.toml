@@ -13,6 +13,7 @@ pymol-open-source = "*"
 pytorch-cpu = "*"
 pip = "*"
 openmm = "*"
+matplotlib = "*"
 
 [pypi-dependencies]
 rnapipey = { path = ".", editable = true }

@@ -25,6 +25,14 @@ class RhoFoldTool(BaseTool):
             return False
         return Path(script).exists()
 
+    @property
+    def _ckpt_path(self) -> str:
+        """Resolve checkpoint path: config model_dir, or default relative to script."""
+        if self.config.model_dir:
+            return str(self.config.model_dir)
+        # Default: <RhoFold dir>/pretrained/rhofold_pretrained_params.pt
+        return str(Path(self.config.script).parent / "pretrained" / "rhofold_pretrained_params.pt")
+
     def run(self, **kwargs: Any) -> ToolResult:
         fasta_path: Path = kwargs["fasta_path"]
         msa_path: Path | None = kwargs.get("msa_path")
@@ -36,9 +44,8 @@ class RhoFoldTool(BaseTool):
             "--input_fas", str(fasta_path),
             "--output_dir", str(self.work_dir),
             "--single_seq_pred", "True",  # always enable single-seq mode as fallback
+            "--ckpt", self._ckpt_path,
         ]
-        if self.config.model_dir:
-            cmd.extend(["--ckpt", str(self.config.model_dir)])
 
         # Device: kwarg overrides config
         effective_device = device if device else self.config.device
@@ -109,9 +116,8 @@ class RhoFoldTool(BaseTool):
             "--seeds", ",".join(str(s) for s in seeds),
             "--output_base_dir", str(output_base_dir),
             "--single_seq_pred", "True",
+            "--ckpt", self._ckpt_path,
         ]
-        if self.config.model_dir:
-            cmd.extend(["--ckpt", str(self.config.model_dir)])
 
         effective_device = device if device else self.config.device
         if effective_device:

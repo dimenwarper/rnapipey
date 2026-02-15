@@ -120,7 +120,12 @@ class RhoFoldTool(BaseTool):
         if msa_path and msa_path.exists():
             cmd.extend(["--input_a3m", str(msa_path)])
 
-        result = self._run_cmd(cmd, work_dir=output_base_dir)
+        # Add RhoFold's install dir to PYTHONPATH so the batch script can
+        # import the rhofold package (same dir that inference.py lives in).
+        rhofold_dir = str(Path(self.config.script).resolve().parent)
+        env = {"PYTHONPATH": rhofold_dir}
+
+        result = self._run_cmd(cmd, work_dir=output_base_dir, env=env)
         if result.returncode != 0:
             return ToolResult(
                 success=False,

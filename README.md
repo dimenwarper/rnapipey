@@ -4,8 +4,34 @@ RNA 3D structure prediction pipeline. Wraps multiple prediction methods behind a
 
 ## Pipeline
 
-```
-Sequence (FASTA) → Rfam/Infernal (MSA) → RNAfold (2D) → 3D Predictors → RNAdvisor (scoring) → Report
+```mermaid
+graph TD
+    A[/"FASTA sequence"/] --> B["<b>Stage 1:</b> Infernal / Rfam<br><i>sequence analysis & MSA</i>"]
+    B --> C["<b>Stage 2:</b> ViennaRNA RNAfold<br><i>secondary structure (MFE)</i>"]
+
+    C --> D["<b>Stage 3a:</b> RhoFold+<br><i>DL ensemble × N seeds</i>"]
+    C --> E["<b>Stage 3a:</b> SimRNA<br><i>MC sampling × N replicas</i>"]
+    C --> F["<b>Stage 3a:</b> Protenix<br><i>AF3-class × N seeds</i>"]
+
+    D -- "--mc-dropout<br>--noise-scale" --> D
+    B -- "MSA" --> D
+    B -- "MSA" --> F
+    C -- "dot-bracket" --> E
+
+    D --> G["<b>Stage 3b:</b> RMSD clustering<br><i>all structures combined</i>"]
+    E --> G
+    F --> G
+
+    G --> H["<b>Stage 4:</b> RNAdvisor scoring<br><i>cluster representatives</i>"]
+    H --> I["<b>Stage 5:</b> Report + PyMOL scripts"]
+
+    style A fill:#e8f5e9,stroke:#388e3c
+    style D fill:#e3f2fd,stroke:#1565c0
+    style E fill:#fce4ec,stroke:#c62828
+    style F fill:#f3e5f5,stroke:#6a1b9a
+    style G fill:#fff3e0,stroke:#e65100
+    style H fill:#fff9c4,stroke:#f57f17
+    style I fill:#f1f8e9,stroke:#558b2f
 ```
 
 **Supported 3D predictors:**

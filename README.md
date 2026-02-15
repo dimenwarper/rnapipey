@@ -79,6 +79,37 @@ pixi run rnapipey run input.fasta -o results/ -c configs/local.yaml --rhofold -v
 pixi run rnapipey report results/
 ```
 
+### Ensemble prediction
+
+Generate multiple structures with different seeds for ensemble analysis and clustering:
+
+```bash
+# 20 structures with RhoFold+
+pixi run rnapipey run input.fasta -o results/ -c configs/local.yaml --rhofold --nstruct 20
+
+# 20 structures with SimRNA (physics-based MC sampling)
+pixi run rnapipey run input.fasta -o results/ -c configs/local.yaml --simrna --nstruct 20
+```
+
+RhoFold+ uses **batch inference** — the model loads once and runs all seeds in a single process, so 20 structures takes ~10 min instead of ~3 hours.
+
+When `--nstruct > 1`, the pipeline automatically clusters output structures by RMSD and scores cluster representatives.
+
+### Multi-GPU
+
+Distribute ensemble runs across multiple GPUs with `--device`:
+
+```bash
+# 4 GPUs: each loads the model once, runs 5 seeds
+pixi run rnapipey run input.fasta -o results/ -c configs/local.yaml --rhofold --nstruct 20 \
+  --device cuda:0,cuda:1,cuda:2,cuda:3
+
+# Single GPU
+pixi run rnapipey run input.fasta -o results/ -c configs/local.yaml --rhofold --device cuda:0
+```
+
+Multi-GPU support works for RhoFold+ and Protenix. Seeds are distributed round-robin across devices.
+
 Or activate the environment and run directly:
 
 ```bash

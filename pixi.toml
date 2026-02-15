@@ -21,6 +21,10 @@ protenix = "*"
 rnadvisor = "*"
 huggingface-hub = "*"
 einops = "*"
+ml-collections = "*"
+dm-tree = "*"
+python-box = "*"
+bio = "*"
 
 [feature.dev.pypi-dependencies]
 pytest = ">=7.0"

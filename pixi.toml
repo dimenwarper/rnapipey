@@ -17,7 +17,6 @@ matplotlib = "*"
 
 [pypi-dependencies]
 rnapipey = { path = ".", editable = true }
-protenix = "*"
 rnadvisor = "*"
 huggingface-hub = "*"
 einops = "*"

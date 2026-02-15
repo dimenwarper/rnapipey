@@ -156,6 +156,24 @@ install_spotrna() {
     info "  cd $spotrna_dir && pip install -r requirements.txt"
 }
 
+install_protenix() {
+    header "Protenix"
+
+    if pixi run pip show protenix 2>/dev/null | grep -q "Location" && \
+       pixi run python -c "from protenix.predictor import predict" 2>/dev/null; then
+        skip "Protenix already installed (real package)."
+    else
+        info "Installing Protenix from GitHub..."
+        pixi run pip install protenix@git+https://github.com/bytedance/Protenix.git
+        if pixi run protenix --help &>/dev/null; then
+            ok "Protenix installed."
+        else
+            fail "Protenix install may have failed. Try manually:"
+            info "  pixi run pip install protenix@git+https://github.com/bytedance/Protenix.git"
+        fi
+    fi
+}
+
 install_simrna() {
     header "SimRNA"
     local simrna_dir="$TOOLS_DIR/SimRNA"
@@ -377,6 +395,7 @@ ${BOLD}OPTIONS${NC}
     --rhofold       Clone RhoFold+, install into pixi env, download weights
     --spotrna       Clone SPOT-RNA & download models
     --simrna        Download SimRNA binary
+    --protenix      Install Protenix from GitHub
     --docker        Install Docker CLI + Colima (macOS) for RNAdvisor
     --config-only   Only (re)generate configs/local.yaml
     --help          Show this help
@@ -402,6 +421,7 @@ main() {
     local do_rhofold=false
     local do_spotrna=false
     local do_simrna=false
+    local do_protenix=false
     local do_docker=false
     local do_config_only=false
 
@@ -412,6 +432,7 @@ main() {
             --rhofold)     do_rhofold=true ;;
             --spotrna)     do_spotrna=true ;;
             --simrna)      do_simrna=true ;;
+            --protenix)    do_protenix=true ;;
             --docker)      do_docker=true ;;
             --config-only) do_config_only=true ;;
             --help|-h)     usage; exit 0 ;;
@@ -436,8 +457,9 @@ main() {
     if $do_all || $do_rfam;    then install_rfam;    fi
     if $do_all || $do_rhofold; then install_rhofold; fi
     if $do_all || $do_spotrna; then install_spotrna; fi
-    if $do_all || $do_simrna;  then install_simrna;  fi
-    if $do_all || $do_docker;  then install_docker;  fi
+    if $do_all || $do_simrna;    then install_simrna;    fi
+    if $do_all || $do_protenix; then install_protenix; fi
+    if $do_all || $do_docker;   then install_docker;   fi
 
     generate_config
 

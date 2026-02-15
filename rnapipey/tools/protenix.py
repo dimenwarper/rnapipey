@@ -22,11 +22,7 @@ class ProtenixTool(BaseTool):
         return "protenix"
 
     def check(self) -> bool:
-        try:
-            import protenix  # noqa: F401
-            return True
-        except ImportError:
-            return False
+        return which(self.config.binary) is not None
 
     def run(self, **kwargs: Any) -> ToolResult:
         fasta_path: Path = kwargs["fasta_path"]
@@ -44,15 +40,13 @@ class ProtenixTool(BaseTool):
         json_path = self.work_dir / "input.json"
         json_path.write_text(json.dumps(input_json, indent=2))
 
-        import sys
-
         cmd = [
-            sys.executable, "-m", "protenix.predict",
-            "--input", str(json_path),
-            "--output_dir", str(self.work_dir),
+            self.config.binary, "pred",
+            "-i", str(json_path),
+            "-o", str(self.work_dir),
         ]
         if self.config.model:
-            cmd.extend(["--model_dir", str(self.config.model)])
+            cmd.extend(["-n", str(self.config.model)])
 
         result = self._run_cmd(cmd, timeout=86400)
         if result.returncode != 0:

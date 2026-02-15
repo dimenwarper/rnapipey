@@ -72,12 +72,16 @@ def main() -> None:
     logger.info("Constructing RhoFold")
     model = RhoFold(rhofold_config)
 
-    logger.info("Downloading checkpoint %s", args.ckpt)
-    try:
-        snapshot_download(repo_id="cuhkaih/rhofold", local_dir=Path(args.ckpt).parent)
-    except Exception as e:
-        logger.error("Could not download checkpoint: %s", e)
-        raise
+    ckpt_path = Path(args.ckpt)
+    if not ckpt_path.exists():
+        logger.info("Downloading checkpoint to %s", ckpt_path.parent)
+        try:
+            snapshot_download(repo_id="cuhkaih/rhofold", local_dir=ckpt_path.parent)
+        except Exception as e:
+            logger.error("Could not download checkpoint: %s", e)
+            raise
+    else:
+        logger.info("Checkpoint already exists at %s, skipping download", ckpt_path)
 
     logger.info("Loading checkpoint %s", args.ckpt)
     model.load_state_dict(

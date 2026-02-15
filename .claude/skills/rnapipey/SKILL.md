@@ -85,6 +85,17 @@ Or use `export PATH="$HOME/.pixi/bin:$PATH"` in Bash tool calls.
 - RNAdvisor CLI uses `--pred_dir` and `--scores` (not --pdb/--metrics)
 - RNAdvisor requires Docker for its scoring backends
 
+## Ensemble diversity (RhoFold+)
+
+RhoFold+ is fully deterministic — different seeds alone produce identical structures. Two CLI flags enable stochastic diversity:
+
+- `--mc-dropout` — re-enables dropout layers at inference (MC Dropout / Bayesian approximation)
+- `--noise-scale FLOAT` — adds Gaussian noise to input token embeddings (default 0.0 = off)
+
+The first seed (seed 0) always runs **vanilla** (no dropout, no noise) as a deterministic baseline. Stochastic methods apply only to remaining seeds.
+
+Implementation flow: `cli.py` → `pipeline.run()` → `_run_stage3()` → `_run_rhofold_ensemble()` → `RhoFoldTool.run_batch()` → subprocess `scripts/batch_rhofold.py` (which handles `--mc_dropout` and `--noise_scale` args).
+
 ## Known issues
 
 - RNAdvisor Docker score merging sometimes fails to produce CSV output (scores appear in container logs but `merge_dfs` returns empty)

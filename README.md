@@ -95,6 +95,26 @@ RhoFold+ uses **batch inference** — the model loads once and runs all seeds in
 
 When `--nstruct > 1`, the pipeline automatically clusters output structures by RMSD and scores cluster representatives.
 
+#### Structural diversity with MC Dropout and input noise
+
+RhoFold+ is fully deterministic — different seeds alone produce identical structures. To get meaningful ensemble diversity, use `--mc-dropout` and/or `--noise-scale`:
+
+```bash
+# MC Dropout only (re-enables dropout layers at inference)
+pixi run rnapipey run input.fasta -o results/ -c configs/local.yaml \
+  --rhofold --nstruct 10 --mc-dropout
+
+# Input noise only (adds Gaussian noise to input embeddings)
+pixi run rnapipey run input.fasta -o results/ -c configs/local.yaml \
+  --rhofold --nstruct 10 --noise-scale 0.1
+
+# Both (recommended for maximum diversity)
+pixi run rnapipey run input.fasta -o results/ -c configs/local.yaml \
+  --rhofold --nstruct 10 --mc-dropout --noise-scale 0.1
+```
+
+The first seed (seed 0) always runs **vanilla** (no dropout, no noise) to preserve the deterministic baseline. Stochastic methods are applied only to the remaining seeds. Without these flags, behavior is unchanged from before.
+
 ### Multi-GPU
 
 Distribute ensemble runs across multiple GPUs with `--device`:

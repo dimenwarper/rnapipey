@@ -103,9 +103,16 @@ class RNAdvisorTool(BaseTool):
                 with open(out_csv) as f:
                     reader = csv.DictReader(f)
                     for row in reader:
-                        return {k: float(v) for k, v in row.items()
-                                if k not in ("", "name", "pdb", "file") and v}
-        except (ValueError, OSError) as e:
+                        parsed: dict[str, float] = {}
+                        for k, v in row.items():
+                            if not v or not v.strip():
+                                continue
+                            try:
+                                parsed[k] = float(v)
+                            except ValueError:
+                                continue  # skip non-numeric columns (rna, etc.)
+                        return parsed
+        except OSError as e:
             logger.warning("Could not parse RNAdvisor output for %s: %s", pdb.name, e)
         return {}
 

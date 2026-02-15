@@ -122,25 +122,25 @@ def main() -> None:
 
     data_dict = get_features(args.input_fas, input_a3m)
 
-    # ---- Embedding noise hook ----
-    # Noise must be added AFTER nn.Embedding (which requires integer tokens),
-    # so we use a forward hook on the MSA embedder to perturb its output.
+    # ---- Embedding noise via monkey-patch ----
+    # RhoFold calls msa_embedder.forward() directly (not via __call__), so
+    # register_forward_hook never fires.  Instead, we wrap the .forward method
+    # to inject Gaussian noise into (msa_fea, pair_fea) after the real forward.
     noise_scale = args.noise_scale
-    _noise_active = False  # mutable flag toggled per seed
+    _noise_active = [False]  # list so the closure can mutate it
 
-    def _embedding_noise_hook(module, input, output):
-        """Add Gaussian noise to (msa_fea, pair_fea) after embedding."""
-        if not _noise_active:
-            return output
-        msa_fea, pair_fea = output
-        msa_fea = msa_fea + torch.randn_like(msa_fea) * noise_scale
-        pair_fea = pair_fea + torch.randn_like(pair_fea) * noise_scale
-        return msa_fea, pair_fea
-
-    hook_handle = None
     if noise_scale > 0:
-        hook_handle = model.msa_embedder.register_forward_hook(_embedding_noise_hook)
-        logger.info("Registered embedding noise hook (scale=%.4f)", noise_scale)
+        _orig_embedder_forward = model.msa_embedder.forward
+
+        def _noisy_embedder_forward(*args_fwd, **kwargs_fwd):
+            msa_fea, pair_fea = _orig_embedder_forward(*args_fwd, **kwargs_fwd)
+            if _noise_active[0]:
+                msa_fea = msa_fea + torch.randn_like(msa_fea) * noise_scale
+                pair_fea = pair_fea + torch.randn_like(pair_fea) * noise_scale
+            return msa_fea, pair_fea
+
+        model.msa_embedder.forward = _noisy_embedder_forward
+        logger.info("Monkey-patched msa_embedder.forward for noise injection (scale=%.4f)", noise_scale)
 
     # ---- Loop over seeds ----
     n_seeds = len(seeds)
@@ -149,6 +149,7 @@ def main() -> None:
     for i, seed in enumerate(seeds):
         os.environ["PYTHONHASHSEED"] = str(seed)
         is_first_seed = (i == 0)
+        is_stochastic = not is_first_seed and (use_mc_dropout or noise_scale > 0)
 
         run_dir = output_base / f"run_{seed}"
         run_dir.mkdir(parents=True, exist_ok=True)
@@ -164,15 +165,23 @@ def main() -> None:
                 for module in model.modules():
                     if isinstance(module, nn.Dropout):
                         module.eval()
-            _noise_active = False
+            _noise_active[0] = False
         else:
             logger.info("Seed %d (%d/%d) — output: %s", seed, i + 1, n_seeds, run_dir)
-            if not is_first_seed and noise_scale > 0:
-                torch.manual_seed(seed)
-                _noise_active = True
-                logger.info("Embedding noise active (scale=%.4f, seed=%d)", noise_scale, seed)
-            else:
-                _noise_active = False
+            _noise_active[0] = is_stochastic and noise_scale > 0
+
+        # Seed both CPU and CUDA RNG for stochastic runs (affects both
+        # dropout masks and noise generation)
+        if is_stochastic:
+            torch.manual_seed(seed)
+            if torch.cuda.is_available():
+                torch.cuda.manual_seed_all(seed)
+            modes = []
+            if use_mc_dropout:
+                modes.append("MC dropout")
+            if noise_scale > 0:
+                modes.append(f"noise={noise_scale:.4f}")
+            logger.info("Stochastic mode (seed=%d): %s", seed, " + ".join(modes))
 
         with timing(f"Seed {seed} inference", logger=logger):
             outputs = model(
@@ -215,9 +224,6 @@ def main() -> None:
         )
 
         logger.info("Seed %d (%d/%d) done", seed, i + 1, n_seeds)
-
-    if hook_handle is not None:
-        hook_handle.remove()
 
     logger.info("Batch inference complete: %d seeds processed", n_seeds)
 

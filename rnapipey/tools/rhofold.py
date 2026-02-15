@@ -101,7 +101,7 @@ class RhoFoldTool(BaseTool):
         msa_path: Path | None = kwargs.get("msa_path")
         device: str | None = kwargs.get("device")
 
-        batch_script = Path(__file__).parent / "rhofold_batch.py"
+        batch_script = Path(__file__).parent / "batch_rhofold.py"
 
         cmd = [
             "python", str(batch_script),

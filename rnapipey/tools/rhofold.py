@@ -107,6 +107,8 @@ class RhoFoldTool(BaseTool):
         output_base_dir: Path = kwargs["output_base_dir"]
         msa_path: Path | None = kwargs.get("msa_path")
         device: str | None = kwargs.get("device")
+        mc_dropout: bool = kwargs.get("mc_dropout", False)
+        noise_scale: float = kwargs.get("noise_scale", 0.0)
 
         batch_script = Path(__file__).parent.parent / "scripts" / "batch_rhofold.py"
 
@@ -125,6 +127,11 @@ class RhoFoldTool(BaseTool):
 
         if msa_path and msa_path.exists():
             cmd.extend(["--input_a3m", str(msa_path)])
+
+        if mc_dropout:
+            cmd.append("--mc_dropout")
+        if noise_scale > 0:
+            cmd.extend(["--noise_scale", str(noise_scale)])
 
         # Add RhoFold's install dir to PYTHONPATH so the batch script can
         # import the rhofold package (same dir that inference.py lives in).

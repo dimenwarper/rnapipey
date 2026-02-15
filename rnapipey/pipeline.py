@@ -53,6 +53,8 @@ class Pipeline:
         skip_scoring: bool = False,
         nstruct: int = 1,
         devices: list[str] | None = None,
+        mc_dropout: bool = False,
+        noise_scale: float = 0.0,
     ) -> None:
         """Run the full pipeline."""
         # Copy input
@@ -83,6 +85,7 @@ class Pipeline:
         predictor_results = self._run_stage3(
             query_fasta, predictors, msa_path, dot_bracket,
             nstruct=nstruct, devices=devices or [],
+            mc_dropout=mc_dropout, noise_scale=noise_scale,
         )
 
         # Stage 3b: Ensemble clustering (when nstruct > 1)
@@ -202,6 +205,8 @@ class Pipeline:
         secondary_structure: str,
         nstruct: int = 1,
         devices: list[str] | None = None,
+        mc_dropout: bool = False,
+        noise_scale: float = 0.0,
     ) -> dict[str, ToolResult]:
         """Stage 3: 3D structure prediction with selected methods."""
         devices = devices or []
@@ -233,6 +238,7 @@ class Pipeline:
                 result = self._run_rhofold_ensemble(
                     fasta_path, msa_path, tool_config, pred_dir,
                     nstruct=nstruct, devices=devices,
+                    mc_dropout=mc_dropout, noise_scale=noise_scale,
                 )
             elif pred_name == "protenix":
                 result = self._run_protenix(
@@ -284,6 +290,8 @@ class Pipeline:
         pred_dir: Path,
         nstruct: int,
         devices: list[str] | None = None,
+        mc_dropout: bool = False,
+        noise_scale: float = 0.0,
     ) -> ToolResult:
         """Run RhoFold+ ensemble using batch inference (load model once per GPU)."""
         devices = devices or []
@@ -310,6 +318,8 @@ class Pipeline:
                 "fasta_path": fasta_path,
                 "seeds": all_seeds,
                 "output_base_dir": rhofold_dir,
+                "mc_dropout": mc_dropout,
+                "noise_scale": noise_scale,
             }
             if msa_path:
                 kwargs["msa_path"] = msa_path
@@ -339,6 +349,8 @@ class Pipeline:
                 "seeds": seeds,
                 "output_base_dir": gpu_dir,
                 "device": device,
+                "mc_dropout": mc_dropout,
+                "noise_scale": noise_scale,
             }
             if msa_path:
                 kw["msa_path"] = msa_path

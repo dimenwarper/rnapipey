@@ -23,6 +23,7 @@ from pathlib import Path
 
 import numpy as np
 import torch
+import torch.nn as nn
 from huggingface_hub import snapshot_download
 
 from rhofold.config import rhofold_config
@@ -59,6 +60,10 @@ def main() -> None:
     parser.add_argument("--input_a3m", default=None)
     parser.add_argument("--seeds", required=True, help="Comma-separated seeds, e.g. 0,1,2,3,4")
     parser.add_argument("--output_base_dir", required=True)
+    parser.add_argument("--mc_dropout", action="store_true",
+                        help="Re-enable dropout at inference for MC Dropout diversity")
+    parser.add_argument("--noise_scale", type=float, default=0.0,
+                        help="Gaussian noise scale to add to input tokens (0 = off)")
 
     args = parser.parse_args()
 
@@ -89,6 +94,15 @@ def main() -> None:
     )
     model.eval()
 
+    # ---- MC Dropout: re-enable dropout layers in eval mode ----
+    if args.mc_dropout:
+        dropout_count = 0
+        for module in model.modules():
+            if isinstance(module, nn.Dropout):
+                module.train()
+                dropout_count += 1
+        logger.info("MC Dropout enabled: set %d Dropout layers to train mode", dropout_count)
+
     # ---- Move to device ONCE ----
     device = get_device(args.device)
     logger.info("Using device %s", device)
@@ -110,20 +124,49 @@ def main() -> None:
 
     # ---- Loop over seeds ----
     n_seeds = len(seeds)
+    use_mc_dropout = args.mc_dropout
+    noise_scale = args.noise_scale
+
     for i, seed in enumerate(seeds):
         os.environ["PYTHONHASHSEED"] = str(seed)
+        is_first_seed = (i == 0)
 
         run_dir = output_base / f"run_{seed}"
         run_dir.mkdir(parents=True, exist_ok=True)
 
-        logger.info("Seed %d (%d/%d) — output: %s", seed, i + 1, n_seeds, run_dir)
+        # Seed 0 (first seed) is always vanilla: no dropout, no noise
+        if is_first_seed and (use_mc_dropout or noise_scale > 0):
+            logger.info(
+                "Seed %d (%d/%d) — VANILLA baseline (no dropout/noise) — output: %s",
+                seed, i + 1, n_seeds, run_dir,
+            )
+            # Temporarily disable dropout for vanilla run
+            if use_mc_dropout:
+                for module in model.modules():
+                    if isinstance(module, nn.Dropout):
+                        module.eval()
+        else:
+            logger.info("Seed %d (%d/%d) — output: %s", seed, i + 1, n_seeds, run_dir)
+
+        # Prepare tokens (optionally add noise for non-vanilla runs)
+        tokens = data_dict["tokens"].to(device)
+        if not is_first_seed and noise_scale > 0:
+            torch.manual_seed(seed)
+            tokens = tokens.float() + torch.randn_like(tokens.float()) * noise_scale
+            logger.info("Added Gaussian noise (scale=%.4f) to input tokens", noise_scale)
 
         with timing(f"Seed {seed} inference", logger=logger):
             outputs = model(
-                tokens=data_dict["tokens"].to(device),
+                tokens=tokens,
                 rna_fm_tokens=data_dict["rna_fm_tokens"].to(device),
                 seq=data_dict["seq"],
             )
+
+        # Re-enable dropout after vanilla run
+        if is_first_seed and use_mc_dropout:
+            for module in model.modules():
+                if isinstance(module, nn.Dropout):
+                    module.train()
 
         output = outputs[-1]
 

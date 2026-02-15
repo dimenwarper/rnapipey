@@ -70,6 +70,14 @@ def run(
     nstruct: int = typer.Option(
         1, "--nstruct", "-n", help="Structures per predictor."
     ),
+    mc_dropout: bool = typer.Option(
+        False, "--mc-dropout",
+        help="Enable MC Dropout for RhoFold+ ensemble diversity (seed 0 stays vanilla).",
+    ),
+    noise_scale: float = typer.Option(
+        0.0, "--noise-scale",
+        help="Gaussian noise scale for RhoFold+ input tokens (0 = off, seed 0 stays vanilla).",
+    ),
     device: str = typer.Option(
         "", "--device", help="Compute device(s), comma-separated (e.g. cuda:0,cuda:1,cuda:2,cuda:3)."
     ),
@@ -107,6 +115,10 @@ def run(
     console.print(f"  Predictors: {', '.join(predictors) if predictors else 'none'}")
     if nstruct > 1:
         console.print(f"  Ensemble:   {nstruct} structures per predictor")
+    if mc_dropout:
+        console.print("  MC Dropout: enabled (seed 0 = vanilla baseline)")
+    if noise_scale > 0:
+        console.print(f"  Noise:      scale={noise_scale} (seed 0 = vanilla baseline)")
     # Parse comma-separated devices into a list
     devices: list[str] = [d.strip() for d in device.split(",") if d.strip()] if device else []
     if devices:
@@ -122,6 +134,8 @@ def run(
         skip_scoring=skip_scoring,
         nstruct=nstruct,
         devices=devices,
+        mc_dropout=mc_dropout,
+        noise_scale=noise_scale,
     )
     console.print(f"\n[green]Done![/green] Results in: {output_dir}")
 

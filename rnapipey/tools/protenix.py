@@ -94,6 +94,8 @@ class ProtenixTool(BaseTool):
         self, sequence: str, name: str, seeds: list[int] | None = None
     ) -> list[dict]:
         """Build Protenix inference input JSON for a single RNA chain."""
+        # Protenix rnaSequence only accepts A, U, G, C, N — convert T to U
+        rna_seq = sequence.upper().replace("T", "U")
         return [
             {
                 "name": f"rnapipey_{name}",
@@ -101,7 +103,7 @@ class ProtenixTool(BaseTool):
                 "sequences": [
                     {
                         "rnaSequence": {
-                            "sequence": sequence,
+                            "sequence": rna_seq,
                             "count": 1,
                         }
                     }

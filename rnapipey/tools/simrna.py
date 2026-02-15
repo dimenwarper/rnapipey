@@ -106,10 +106,10 @@ class SimRNATool(BaseTool):
                 stack.append(i)
             elif ch == ")" and stack:
                 j = stack.pop()
-                # SimRNA restraint format: DIST chain res1 atom1 chain res2 atom2 dist_min dist_max weight
-                # Use N1/N3 atoms for base-pairing distance restraints
+                # SimRNA restraint format: SLOPE chain/res/atom chain/res/atom min max weight
+                # Use C4' atoms for base-pairing distance restraints
                 lines.append(
-                    f"DIST A {j+1} N1 A {i+1} N3 5.0 10.0 1.0"
+                    f"SLOPE A/{j+1}/C4' A/{i+1}/C4' 5.0 10.0 1.0"
                 )
         restraints_file.write_text("\n".join(lines) + "\n")
         return restraints_file

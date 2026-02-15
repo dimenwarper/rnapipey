@@ -67,6 +67,13 @@ class SimRNATool(BaseTool):
         if restraints_file:
             cmd.extend(["-r", str(restraints_file)])
 
+        # SimRNA requires a 'data' directory (or symlink) in the working dir,
+        # even when -E is passed.
+        if self.config.data_dir:
+            data_link = self.work_dir / "data"
+            if not data_link.exists():
+                data_link.symlink_to(Path(self.config.data_dir).resolve())
+
         result = self._run_cmd(cmd, timeout=86400)  # can take hours
         if result.returncode != 0:
             return ToolResult(

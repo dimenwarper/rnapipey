@@ -115,6 +115,12 @@ pixi run rnapipey run input.fasta -o results/ -c configs/local.yaml \
 
 The first seed (seed 0) always runs **vanilla** (no dropout, no noise) to preserve the deterministic baseline. Stochastic methods are applied only to the remaining seeds. Without these flags, behavior is unchanged from before.
 
+<p align="center">
+  <img src="docs/images/ensemble_qt45.png" width="500" alt="RhoFold+ ensemble of 30 structures for QT45 RNA">
+  <br>
+  <em>30-structure RhoFold+ ensemble for QT45 RNA (MC Dropout + noise scale 0.1). Helical core is conserved; loops and termini show structural diversity.</em>
+</p>
+
 ### Multi-GPU
 
 Distribute ensemble runs across multiple GPUs with `--device`:

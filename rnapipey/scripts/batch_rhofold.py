@@ -21,11 +21,6 @@ import os
 import sys
 from pathlib import Path
 
-# Remove this script's directory from sys.path to avoid shadowing the real
-# rhofold package with rnapipey/tools/rhofold.py
-_script_dir = str(Path(__file__).resolve().parent)
-sys.path = [p for p in sys.path if os.path.realpath(p) != _script_dir]
-
 import numpy as np
 import torch
 from huggingface_hub import snapshot_download

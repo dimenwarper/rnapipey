@@ -37,7 +37,7 @@ graph TD
 **Supported 3D predictors:**
 - **RhoFold+** — deep learning, end-to-end (best for shallow MSAs)
 - **SimRNA** — physics-based Monte Carlo with 2D restraints
-- **Protenix** — open-source AlphaFold3 reproduction
+- **Protenix** — open-source AlphaFold3 reproduction (mostly untested — requires ~200 GB database download)
 
 ## Install
 
